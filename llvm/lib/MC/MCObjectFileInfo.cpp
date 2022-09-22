@@ -61,9 +61,10 @@ void MCObjectFileInfo::initMachOMCObjectFileInfo(const Triple &T) {
           MachO::S_ATTR_STRIP_STATIC_SYMS | MachO::S_ATTR_LIVE_SUPPORT,
       SectionKind::getReadOnly());
 
-  if (T.isOSDarwin() &&
-      (T.getArch() == Triple::aarch64 || T.getArch() == Triple::aarch64_32))
-    SupportsCompactUnwindWithoutEHFrame = true;
+  // Disabled for now, since we need to emit EH Frames for stack unwinding in the JIT
+  // if (T.isOSDarwin() &&
+  //     (T.getArch() == Triple::aarch64 || T.getArch() == Triple::aarch64_32))
+  //   SupportsCompactUnwindWithoutEHFrame = true;
 
   switch (Ctx->emitDwarfUnwindInfo()) {
   case EmitDwarfUnwindType::Always:
