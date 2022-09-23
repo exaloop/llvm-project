@@ -11,6 +11,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/InstIterator.h"
@@ -48,6 +49,29 @@ struct Lowerer : coro::LowererBase {
   bool processCoroId(CoroIdInst *, AAResults &AA, DominatorTree &DT);
   bool hasEscapePath(const CoroBeginInst *,
                      const SmallPtrSetImpl<BasicBlock *> &) const;
+};
+
+struct CoroCaptureTracker : public CaptureTracker {
+  CoroCaptureTracker() : Captured(false) {}
+
+  bool captured(const Use *U) override {
+    Captured = true;
+    return true;
+  }
+
+  bool shouldExplore(const Use *U) override {
+    Instruction *I = cast<Instruction>(U->getUser());
+    if (auto *C = dyn_cast<CallBase>(I)) {
+      const bool Explore = isa<Function>(C->getCalledOperand()) &&
+                           !C->doesNotCapture(C->getArgOperandNo(U));
+      return Explore;
+    }
+    return true;
+  }
+
+  void tooManyUses() override { Captured = true; }
+
+  bool Captured;
 };
 } // end anonymous namespace
 
@@ -225,51 +249,15 @@ bool Lowerer::shouldElide(Function *F, DominatorTree &DT) const {
   if (CoroAllocs.empty())
     return false;
 
-  // Check that for every coro.begin there is at least one coro.destroy directly
-  // referencing the SSA value of that coro.begin along each
-  // non-exceptional path.
-  // If the value escaped, then coro.destroy would have been referencing a
-  // memory location storing that value and not the virtual register.
-
-  SmallPtrSet<BasicBlock *, 8> Terminators;
-  // First gather all of the non-exceptional terminators for the function.
-  // Consider the final coro.suspend as the real terminator when the current
-  // function is a coroutine.
-    for (BasicBlock &B : *F) {
-      auto *TI = B.getTerminator();
-      if (TI->getNumSuccessors() == 0 && !TI->isExceptionalTerminator() &&
-          !isa<UnreachableInst>(TI))
-        Terminators.insert(&B);
-    }
-
-  // Filter out the coro.destroy that lie along exceptional paths.
-  SmallPtrSet<CoroBeginInst *, 8> ReferencedCoroBegins;
-  for (auto &It : DestroyAddr) {
-    // If there is any coro.destroy dominates all of the terminators for the
-    // coro.begin, we could know the corresponding coro.begin wouldn't escape.
-    for (Instruction *DA : It.second) {
-      if (llvm::all_of(Terminators, [&](auto *TI) {
-            return DT.dominates(DA, TI->getTerminator());
-          })) {
-        ReferencedCoroBegins.insert(It.first);
-        break;
-      }
-    }
-
-    // Whether there is any paths from coro.begin to Terminators which not pass
-    // through any of the coro.destroys.
-    //
-    // hasEscapePath is relatively slow, so we avoid to run it as much as
-    // possible.
-    if (!ReferencedCoroBegins.count(It.first) &&
-        !hasEscapePath(It.first, Terminators))
-      ReferencedCoroBegins.insert(It.first);
+  // Ensure no coroutine handle escapes the parent function.
+  for (CoroBeginInst *CB : CoroBegins) {
+    CoroCaptureTracker CCT;
+    PointerMayBeCaptured(CB, &CCT, /*MaxUsesToExplore=*/32);
+    if (CCT.Captured)
+      return false;
   }
 
-  // If size of the set is the same as total number of coro.begin, that means we
-  // found a coro.free or coro.destroy referencing each coro.begin, so we can
-  // perform heap elision.
-  return ReferencedCoroBegins.size() == CoroBegins.size();
+  return true;
 }
 
 void Lowerer::collectPostSplitCoroIds(Function *F) {
