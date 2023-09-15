@@ -103,6 +103,17 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Install dependencies
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          brew install ninja
+
+      - name: Install dependencies
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          apt-get install -y ninja-build
+
+
       - name: Build LLVM
         run: |
           cmake -S llvm -B build-llvm -G Ninja \
