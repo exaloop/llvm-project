@@ -107,12 +107,13 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           brew install ninja
+          echo "OPT=/usr/local" >> $GITHUB_ENV
 
       - name: Install dependencies
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get install -y ninja-build
-
+          echo "OPT=/opt" >> $GITHUB_ENV
 
       - name: Build LLVM
         run: |
@@ -124,18 +125,18 @@ jobs:
               -DLLVM_ENABLE_TERMINFO=OFF \
               -DLLVM_TARGETS_TO_BUILD=all
           cmake --build build-llvm
-          cmake --install build-llvm --prefix=/github/llvm-codon
+          cmake --install build-llvm --prefix=${OPT}/llvm-codon
 
       - name: Build Clang
         run: |
           cmake -S clang -B build-clang -G Ninja \
               -DCMAKE_BUILD_TYPE=Release
           cmake --build build-clang
-          cmake --install build-clang --prefix=/github/llvm-codon
+          cmake --install build-clang --prefix=${OPT}/llvm-codon
 
       - name: Prepare Artifacts
         run: |
-          tar -czf codon-$(uname -s | awk '{print tolower($0)}')-$(uname -m).tar.gz /github/llvm-codon
+          tar -czf codon-$(uname -s | awk '{print tolower($0)}')-$(uname -m).tar.gz ${OPT}/llvm-codon
 
       - name: Load Release URL File
         if: contains(github.ref, 'tags/codon-')
