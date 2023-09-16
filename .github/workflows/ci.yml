@@ -106,7 +106,7 @@ jobs:
       - name: Install dependencies
         if: startsWith(matrix.os, 'macos')
         run: |
-          brew install ninja
+          brew install ninja libedit zstd
           sudo mkdir -p /usr/local/llvm-codon
           sudo chown -R `whoami` /usr/local/llvm-codon
           echo "OPT=/usr/local" >> $GITHUB_ENV
