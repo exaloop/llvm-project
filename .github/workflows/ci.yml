@@ -107,6 +107,8 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           brew install ninja
+          sudo mkdir -p /usr/local/llvm-codon
+          sudo chown -R `whoami` /usr/local/llvm-codon
           echo "OPT=/usr/local" >> $GITHUB_ENV
 
       - name: Install dependencies
