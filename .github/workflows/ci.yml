@@ -106,7 +106,7 @@ jobs:
       - name: Install dependencies
         if: startsWith(matrix.os, 'macos')
         run: |
-          brew install ninja libedit zstd
+          brew install ninja
           sudo mkdir -p /usr/local/llvm-codon
           sudo chown -R `whoami` /usr/local/llvm-codon
           echo "OPT=/usr/local" >> $GITHUB_ENV
@@ -125,14 +125,16 @@ jobs:
               -DLLVM_ENABLE_RTTI=ON \
               -DLLVM_ENABLE_ZLIB=OFF \
               -DLLVM_ENABLE_TERMINFO=OFF \
-              -DLLVM_TARGETS_TO_BUILD=all
+              -DLLVM_TARGETS_TO_BUILD=all \
+              -DLLVM_ENABLE_LIBEDIT=OFF
           cmake --build build-llvm
           cmake --install build-llvm --prefix=${OPT}/llvm-codon
 
       - name: Build Clang
         run: |
           cmake -S clang -B build-clang -G Ninja \
-              -DCMAKE_BUILD_TYPE=Release
+              -DCMAKE_BUILD_TYPE=Release \
+              -DLLVM_ENABLE_LIBEDIT=OFF
           cmake --build build-clang
           cmake --install build-clang --prefix=${OPT}/llvm-codon
 
