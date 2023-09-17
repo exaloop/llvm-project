@@ -140,7 +140,7 @@ jobs:
 
       - name: Prepare Artifacts
         run: |
-          tar -czf codon-$(uname -s | awk '{print tolower($0)}')-$(uname -m).tar.gz ${OPT}/llvm-codon
+          tar -czf llvm-$(uname -s | awk '{print tolower($0)}')-$(uname -m).tar.gz ${OPT}/llvm-codon
 
       - name: Load Release URL File
         if: contains(github.ref, 'tags/codon-')
