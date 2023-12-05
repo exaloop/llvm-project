@@ -968,7 +968,7 @@ void CoroCloner::create() {
         Context, AttrBuilder(Context, OrigAttrs.getFnAttrs()));
 
     addFramePointerAttrs(NewAttrs, Context, 0, Shape.FrameSize,
-                         Shape.FrameAlign, /*NoAlias=*/false);
+                         Shape.FrameAlign, /*NoAlias=*/true);
     break;
   case coro::ABI::Async: {
     auto *ActiveAsyncSuspend = cast<CoroSuspendAsyncInst>(ActiveSuspend);
