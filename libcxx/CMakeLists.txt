@@ -48,6 +48,10 @@ include(CMakeDependentOption)
 include(HandleCompilerRT)
 
 # Basic options ---------------------------------------------------------------
+option(LIBCXX_ENABLE_ASSERTIONS
+  "Enable assertions inside the compiled library, and at the same time make it the
+   default when compiling user code. Note that assertions can be enabled or disabled
+   by users in their own code regardless of this option." OFF)
 option(LIBCXX_ENABLE_SHARED "Build libc++ as a shared library." ON)
 option(LIBCXX_ENABLE_STATIC "Build libc++ as a static library." ON)
 option(LIBCXX_ENABLE_FILESYSTEM
@@ -197,7 +201,7 @@ if (NOT ("${LIBCXX_TYPEINFO_COMPARISON_IMPLEMENTATION}" IN_LIST TYPEINFO_COMPARI
 endif()
 
 set(LIBCXX_ABI_DEFINES "" CACHE STRING "A semicolon separated list of ABI macros to define in the site config header.")
-option(LIBCXX_EXTRA_SITE_DEFINES "Extra defines to add into __config_site")
+set(LIBCXX_EXTRA_SITE_DEFINES "" CACHE STRING "Extra defines to add into __config_site")
 option(LIBCXX_USE_COMPILER_RT "Use compiler-rt instead of libgcc" OFF)
 
 # ABI Library options ---------------------------------------------------------
@@ -384,9 +388,9 @@ endif ()
 # TODO: Projects that depend on libc++ should use LIBCXX_GENERATED_INCLUDE_DIR
 # instead of hard-coding include/c++/v1.
 
-set(LIBCXX_INSTALL_INCLUDE_DIR "${CMAKE_INSTALL_INCLUDEDIR}/c++/v1" CACHE PATH
+set(LIBCXX_INSTALL_INCLUDE_DIR "${CMAKE_INSTALL_INCLUDEDIR}/c++/v1" CACHE STRING
     "Path where target-agnostic libc++ headers should be installed.")
-set(LIBCXX_INSTALL_RUNTIME_DIR "${CMAKE_INSTALL_BINDIR}" CACHE PATH
+set(LIBCXX_INSTALL_RUNTIME_DIR "${CMAKE_INSTALL_BINDIR}" CACHE STRING
     "Path where built libc++ runtime libraries should be installed.")
 
 set(LIBCXX_SHARED_OUTPUT_NAME "c++" CACHE STRING "Output name for the shared libc++ runtime library.")
@@ -397,9 +401,9 @@ if(LLVM_ENABLE_PER_TARGET_RUNTIME_DIR AND NOT APPLE)
   set(LIBCXX_GENERATED_INCLUDE_DIR "${LLVM_BINARY_DIR}/include/c++/v1")
   set(LIBCXX_GENERATED_MODULE_DIR "${LLVM_BINARY_DIR}/modules/c++/v1")
   set(LIBCXX_GENERATED_INCLUDE_TARGET_DIR "${LLVM_BINARY_DIR}/include/${LLVM_DEFAULT_TARGET_TRIPLE}/c++/v1")
-  set(LIBCXX_INSTALL_LIBRARY_DIR lib${LLVM_LIBDIR_SUFFIX}/${LLVM_DEFAULT_TARGET_TRIPLE} CACHE PATH
+  set(LIBCXX_INSTALL_LIBRARY_DIR lib${LLVM_LIBDIR_SUFFIX}/${LLVM_DEFAULT_TARGET_TRIPLE} CACHE STRING
       "Path where built libc++ libraries should be installed.")
-  set(LIBCXX_INSTALL_INCLUDE_TARGET_DIR "${CMAKE_INSTALL_INCLUDEDIR}/${LLVM_DEFAULT_TARGET_TRIPLE}/c++/v1" CACHE PATH
+  set(LIBCXX_INSTALL_INCLUDE_TARGET_DIR "${CMAKE_INSTALL_INCLUDEDIR}/${LLVM_DEFAULT_TARGET_TRIPLE}/c++/v1" CACHE STRING
       "Path where target-specific libc++ headers should be installed.")
   if(LIBCXX_LIBDIR_SUBDIR)
     string(APPEND LIBCXX_LIBRARY_DIR /${LIBCXX_LIBDIR_SUBDIR})
@@ -416,9 +420,9 @@ else()
     set(LIBCXX_GENERATED_MODULE_DIR "${CMAKE_BINARY_DIR}/modules/c++/v1")
   endif()
   set(LIBCXX_GENERATED_INCLUDE_TARGET_DIR "${LIBCXX_GENERATED_INCLUDE_DIR}")
-  set(LIBCXX_INSTALL_LIBRARY_DIR lib${LIBCXX_LIBDIR_SUFFIX} CACHE PATH
+  set(LIBCXX_INSTALL_LIBRARY_DIR lib${LIBCXX_LIBDIR_SUFFIX} CACHE STRING
       "Path where built libc++ libraries should be installed.")
-  set(LIBCXX_INSTALL_INCLUDE_TARGET_DIR "${LIBCXX_INSTALL_INCLUDE_DIR}" CACHE PATH
+  set(LIBCXX_INSTALL_INCLUDE_TARGET_DIR "${LIBCXX_INSTALL_INCLUDE_DIR}" CACHE STRING
       "Path where target-specific libc++ headers should be installed.")
 endif()
 
@@ -747,6 +751,11 @@ config_define_if_not(LIBCXX_ENABLE_LOCALIZATION _LIBCPP_HAS_NO_LOCALIZATION)
 config_define_if_not(LIBCXX_ENABLE_UNICODE _LIBCPP_HAS_NO_UNICODE)
 config_define_if_not(LIBCXX_ENABLE_WIDE_CHARACTERS _LIBCPP_HAS_NO_WIDE_CHARACTERS)
 config_define_if_not(LIBCXX_ENABLE_VENDOR_AVAILABILITY_ANNOTATIONS _LIBCPP_HAS_NO_VENDOR_AVAILABILITY_ANNOTATIONS)
+if (LIBCXX_ENABLE_ASSERTIONS)
+  config_define(1 _LIBCPP_ENABLE_ASSERTIONS_DEFAULT)
+else()
+  config_define(0 _LIBCPP_ENABLE_ASSERTIONS_DEFAULT)
+endif()
 if (LIBCXX_HARDENING_MODE STREQUAL "hardened")
   config_define(1 _LIBCPP_ENABLE_HARDENED_MODE_DEFAULT)
   config_define(0 _LIBCPP_ENABLE_DEBUG_MODE_DEFAULT)
@@ -756,11 +765,6 @@ elseif (LIBCXX_HARDENING_MODE STREQUAL "debug")
 elseif (LIBCXX_HARDENING_MODE STREQUAL "unchecked")
   config_define(0 _LIBCPP_ENABLE_HARDENED_MODE_DEFAULT)
   config_define(0 _LIBCPP_ENABLE_DEBUG_MODE_DEFAULT)
-endif()
-# TODO(LLVM 18): Remove this after branching for LLVM 17, this is a simple
-# courtesy for vendors to be notified about this change.
-if (LIBCXX_ENABLE_ASSERTIONS)
-  message(FATAL_ERROR "LIBCXX_ENABLE_ASSERTIONS has been replaced by LIBCXX_HARDENING_MODE=hardened")
 endif()
 
 if (LIBCXX_PSTL_CPU_BACKEND STREQUAL "serial")

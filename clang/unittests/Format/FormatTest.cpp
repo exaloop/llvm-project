@@ -2059,8 +2059,6 @@ TEST_F(FormatTest, SeparatePointerReferenceAlignment) {
                "const unsigned int *d;\n"
                "Const unsigned int &e;\n"
                "const unsigned int &f;\n"
-               "int                *f1(int *a, int &b, int &&c);\n"
-               "double             *(*f2)(int *a, double &&b);\n"
                "const unsigned    &&g;\n"
                "Const unsigned      h;",
                Style);
@@ -2106,8 +2104,6 @@ TEST_F(FormatTest, SeparatePointerReferenceAlignment) {
                "const unsigned int* d;\n"
                "Const unsigned int& e;\n"
                "const unsigned int& f;\n"
-               "int*                f1(int* a, int& b, int&& c);\n"
-               "double*             (*f2)(int* a, double&& b);\n"
                "const unsigned&&    g;\n"
                "Const unsigned      h;",
                Style);
@@ -2133,8 +2129,6 @@ TEST_F(FormatTest, SeparatePointerReferenceAlignment) {
                "const unsigned int *d;\n"
                "Const unsigned int& e;\n"
                "const unsigned int& f;\n"
-               "int                *f1(int *a, int& b, int&& c);\n"
-               "double             *(*f2)(int *a, double&& b);\n"
                "const unsigned      g;\n"
                "Const unsigned      h;",
                Style);
@@ -2175,8 +2169,6 @@ TEST_F(FormatTest, SeparatePointerReferenceAlignment) {
                "const unsigned int*  d;\n"
                "Const unsigned int & e;\n"
                "const unsigned int & f;\n"
-               "int*                 f1(int* a, int & b, int && c);\n"
-               "double*              (*f2)(int* a, double && b);\n"
                "const unsigned &&    g;\n"
                "Const unsigned       h;",
                Style);
@@ -2202,8 +2194,6 @@ TEST_F(FormatTest, SeparatePointerReferenceAlignment) {
                "const unsigned int * d;\n"
                "Const unsigned int  &e;\n"
                "const unsigned int  &f;\n"
-               "int *                f1(int * a, int &b, int &&c);\n"
-               "double *             (*f2)(int * a, double &&b);\n"
                "const unsigned     &&g;\n"
                "Const unsigned       h;",
                Style);
@@ -13458,6 +13448,8 @@ TEST_F(FormatTest, LayoutCxx11BraceInitializers) {
   verifyFormat(
       "class A {\n"
       "  A() : a{} {}\n"
+      "  A() : Base<int>{} {}\n"
+      "  A() : Base<Foo<int>>{} {}\n"
       "  A(int b) : b(b) {}\n"
       "  A(int a, int b) : a(a), bs{{bs...}} { f(); }\n"
       "  int a, b;\n"
@@ -20742,6 +20734,11 @@ TEST_F(FormatTest, CatchExceptionReferenceBinding) {
 TEST_F(FormatTest, CatchAlignArrayOfStructuresRightAlignment) {
   auto Style = getLLVMStyle();
   Style.AlignArrayOfStructures = FormatStyle::AIAS_Right;
+  verifyNoCrash("f({\n"
+                "table({}, table({{\"\", false}}, {}))\n"
+                "});",
+                Style);
+
   Style.AlignConsecutiveAssignments.Enabled = true;
   Style.AlignConsecutiveDeclarations.Enabled = true;
   verifyFormat("struct test demo[] = {\n"
@@ -21150,6 +21147,33 @@ TEST_F(FormatTest, CatchAlignArrayOfStructuresLeftAlignment) {
              "that really, in any just world, ought to be split over multiple "
              "lines\"},{-1, 93463, \"world\"},{7, 5, \"!!\"},};",
              Style));
+
+  Style.ColumnLimit = 25;
+  verifyNoCrash("Type foo{\n"
+                "    {\n"
+                "        1,  // A\n"
+                "        2,  // B\n"
+                "        3,  // C\n"
+                "    },\n"
+                "    \"hello\",\n"
+                "};",
+                Style);
+  verifyNoCrash("Type object[X][Y] = {\n"
+                "    {{val}, {val}, {val}},\n"
+                "    {{val}, {val}, // some comment\n"
+                "                   {val}}\n"
+                "};",
+                Style);
+
+  Style.ColumnLimit = 120;
+  verifyNoCrash(
+      "T v[] {\n"
+      "    { AAAAAAAAAAAAAAAAAAAAAAAAA::aaaaaaaaaaaaaaaaaaa, "
+      "AAAAAAAAAAAAAAAAAAAAAAAAA::aaaaaaaaaaaaaaaaaaaaaaaa, 1, 0.000000000f, "
+      "\"00000000000000000000000000000000000000000000000000000000"
+      "00000000000000000000000000000000000000000000000000000000\" },\n"
+      "};",
+      Style);
 }
 
 TEST_F(FormatTest, UnderstandsPragmas) {
@@ -26266,6 +26290,7 @@ TEST_F(FormatTest, RemoveParentheses) {
 
   Style.RemoveParentheses = FormatStyle::RPS_MultipleParentheses;
   verifyFormat("int x __attribute__((aligned(16))) = 0;", Style);
+  verifyFormat("decltype((foo->bar)) baz;", Style);
   verifyFormat("class __declspec(dllimport) X {};",
                "class __declspec((dllimport)) X {};", Style);
   verifyFormat("int x = (({ 0; }));", "int x = ((({ 0; })));", Style);
@@ -26302,6 +26327,56 @@ TEST_F(FormatTest, RemoveParentheses) {
   verifyFormat("co_return 0;", "co_return ((0));", Style);
   verifyFormat("return 0;", "return (((0)));", Style);
   verifyFormat("return ({ 0; });", "return ((({ 0; })));", Style);
+  verifyFormat("inline decltype(auto) f() {\n"
+               "  if (a) {\n"
+               "    return (a);\n"
+               "  }\n"
+               "  return (b);\n"
+               "}",
+               "inline decltype(auto) f() {\n"
+               "  if (a) {\n"
+               "    return ((a));\n"
+               "  }\n"
+               "  return ((b));\n"
+               "}",
+               Style);
+  verifyFormat("auto g() {\n"
+               "  decltype(auto) x = [] {\n"
+               "    auto y = [] {\n"
+               "      if (a) {\n"
+               "        return a;\n"
+               "      }\n"
+               "      return b;\n"
+               "    };\n"
+               "    if (c) {\n"
+               "      return (c);\n"
+               "    }\n"
+               "    return (d);\n"
+               "  };\n"
+               "  if (e) {\n"
+               "    return e;\n"
+               "  }\n"
+               "  return f;\n"
+               "}",
+               "auto g() {\n"
+               "  decltype(auto) x = [] {\n"
+               "    auto y = [] {\n"
+               "      if (a) {\n"
+               "        return ((a));\n"
+               "      }\n"
+               "      return ((b));\n"
+               "    };\n"
+               "    if (c) {\n"
+               "      return ((c));\n"
+               "    }\n"
+               "    return ((d));\n"
+               "  };\n"
+               "  if (e) {\n"
+               "    return ((e));\n"
+               "  }\n"
+               "  return ((f));\n"
+               "}",
+               Style);
 
   Style.ColumnLimit = 25;
   verifyFormat("return (a + b) - (c + d);",

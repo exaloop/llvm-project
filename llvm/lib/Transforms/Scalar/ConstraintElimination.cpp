@@ -412,6 +412,19 @@ static Decomposition decompose(Value *V,
     return ResA;
   };
 
+  Type *Ty = V->getType()->getScalarType();
+  if (Ty->isPointerTy() && !IsSigned) {
+    if (auto *GEP = dyn_cast<GEPOperator>(V))
+      return decomposeGEP(*GEP, Preconditions, IsSigned, DL);
+    return V;
+  }
+
+  // Don't handle integers > 64 bit. Our coefficients are 64-bit large, so
+  // coefficient add/mul may wrap, while the operation in the full bit width
+  // would not.
+  if (!Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+    return V;
+
   // Decompose \p V used with a signed predicate.
   if (IsSigned) {
     if (auto *CI = dyn_cast<ConstantInt>(V)) {
@@ -424,7 +437,7 @@ static Decomposition decompose(Value *V,
       return MergeResults(Op0, Op1, IsSigned);
 
     ConstantInt *CI;
-    if (match(V, m_NSWMul(m_Value(Op0), m_ConstantInt(CI)))) {
+    if (match(V, m_NSWMul(m_Value(Op0), m_ConstantInt(CI))) && canUseSExt(CI)) {
       auto Result = decompose(Op0, Preconditions, IsSigned, DL);
       Result.mul(CI->getSExtValue());
       return Result;
@@ -438,9 +451,6 @@ static Decomposition decompose(Value *V,
       return V;
     return int64_t(CI->getZExtValue());
   }
-
-  if (auto *GEP = dyn_cast<GEPOperator>(V))
-    return decomposeGEP(*GEP, Preconditions, IsSigned, DL);
 
   Value *Op0;
   bool IsKnownNonNegative = false;

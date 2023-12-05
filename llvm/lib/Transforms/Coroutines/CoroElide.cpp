@@ -218,12 +218,49 @@ bool Lowerer::hasEscapePath(const CoroBeginInst *CB,
   for (auto *DA : It->second)
     Visited.insert(DA->getParent());
 
+  SmallPtrSet<const BasicBlock *, 32> EscapingBBs;
+  for (auto *U : CB->users()) {
+    // The use from coroutine intrinsics are not a problem.
+    if (isa<CoroFreeInst, CoroSubFnInst, CoroSaveInst>(U))
+      continue;
+
+    // Think all other usages may be an escaping candidate conservatively.
+    //
+    // Note that the major user of switch ABI coroutine (the C++) will store
+    // resume.fn, destroy.fn and the index to the coroutine frame immediately.
+    // So the parent of the coro.begin in C++ will be always escaping.
+    // Then we can't get any performance benefits for C++ by improving the
+    // precision of the method.
+    //
+    // The reason why we still judge it is we want to make LLVM Coroutine in
+    // switch ABIs to be self contained as much as possible instead of a
+    // by-product of C++20 Coroutines.
+    EscapingBBs.insert(cast<Instruction>(U)->getParent());
+  }
+
+  bool PotentiallyEscaped = false;
+
   do {
     const auto *BB = Worklist.pop_back_val();
     if (!Visited.insert(BB).second)
       continue;
-    if (TIs.count(BB))
-      return true;
+
+    // A Path insensitive marker to test whether the coro.begin escapes.
+    // It is intentional to make it path insensitive while it may not be
+    // precise since we don't want the process to be too slow.
+    PotentiallyEscaped |= EscapingBBs.count(BB);
+
+    if (TIs.count(BB)) {
+      if (!BB->getTerminator()->isExceptionalTerminator() || PotentiallyEscaped)
+        return true;
+
+      // If the function ends with the exceptional terminator, the memory used
+      // by the coroutine frame can be released by stack unwinding
+      // automatically. So we can think the coro.begin doesn't escape if it
+      // exits the function by exceptional terminator.
+
+      continue;
+    }
 
     // Conservatively say that there is potentially a path.
     if (!--Limit)

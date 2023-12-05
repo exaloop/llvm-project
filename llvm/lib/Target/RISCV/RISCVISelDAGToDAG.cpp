@@ -991,12 +991,12 @@ void RISCVDAGToDAGISel::Select(SDNode *Node) {
     unsigned TrailingOnes = llvm::countr_one(Mask);
     if (ShAmt >= TrailingOnes)
       break;
-    // If the mask has 32 trailing ones, use SRLIW.
+    // If the mask has 32 trailing ones, use SRLI on RV32 or SRLIW on RV64.
     if (TrailingOnes == 32) {
-      SDNode *SRLIW =
-          CurDAG->getMachineNode(RISCV::SRLIW, DL, VT, N0->getOperand(0),
-                                 CurDAG->getTargetConstant(ShAmt, DL, VT));
-      ReplaceNode(Node, SRLIW);
+      SDNode *SRLI = CurDAG->getMachineNode(
+          Subtarget->is64Bit() ? RISCV::SRLIW : RISCV::SRLI, DL, VT,
+          N0->getOperand(0), CurDAG->getTargetConstant(ShAmt, DL, VT));
+      ReplaceNode(Node, SRLI);
       return;
     }
 
@@ -3414,6 +3414,7 @@ bool RISCVDAGToDAGISel::performCombineVMergeAndVOps(SDNode *N) {
 
   // Because N and True must have the same merge operand (or True's operand is
   // implicit_def), the "effective" body is the minimum of their VLs.
+  SDValue OrigVL = VL;
   VL = GetMinVL(TrueVL, VL);
   if (!VL)
     return false;
@@ -3461,7 +3462,17 @@ bool RISCVDAGToDAGISel::performCombineVMergeAndVOps(SDNode *N) {
          "Expected instructions with mask have a tied dest.");
 #endif
 
-  uint64_t Policy = isImplicitDef(Merge) ? RISCVII::TAIL_AGNOSTIC : /*TUMU*/ 0;
+  // Use a tumu policy, relaxing it to tail agnostic provided that the merge
+  // operand is undefined.
+  //
+  // However, if the VL became smaller than what the vmerge had originally, then
+  // elements past VL that were previously in the vmerge's body will have moved
+  // to the tail. In that case we always need to use tail undisturbed to
+  // preserve them.
+  bool MergeVLShrunk = VL != OrigVL;
+  uint64_t Policy = (isImplicitDef(Merge) && !MergeVLShrunk)
+                        ? RISCVII::TAIL_AGNOSTIC
+                        : /*TUMU*/ 0;
   SDValue PolicyOp =
     CurDAG->getTargetConstant(Policy, DL, Subtarget->getXLenVT());
 

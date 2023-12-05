@@ -96,6 +96,7 @@ else:
   ret i1 false
 }
 
+; TODO: This could be folded.
 define i1 @sub_decomp_i80(i80 %a) {
 ; CHECK-LABEL: @sub_decomp_i80(
 ; CHECK-NEXT:  entry:
@@ -105,7 +106,7 @@ define i1 @sub_decomp_i80(i80 %a) {
 ; CHECK:       then:
 ; CHECK-NEXT:    [[SUB_1:%.*]] = sub nuw i80 [[A]], 1973801615886922022913
 ; CHECK-NEXT:    [[C_1:%.*]] = icmp ult i80 [[SUB_1]], 1346612317380797267967
-; CHECK-NEXT:    ret i1 true
+; CHECK-NEXT:    ret i1 [[C_1]]
 ; CHECK:       else:
 ; CHECK-NEXT:    ret i1 false
 ;
@@ -282,6 +283,29 @@ else:
   ret i1 false
 }
 
+define i1 @mul_nsw_decomp(i128 %x) {
+; CHECK-LABEL: @mul_nsw_decomp(
+; CHECK-NEXT:    [[VAL:%.*]] = mul nsw i128 [[X:%.*]], 9223372036854775808
+; CHECK-NEXT:    [[CMP:%.*]] = icmp sgt i128 [[X]], [[VAL]]
+; CHECK-NEXT:    br i1 [[CMP]], label [[THEN:%.*]], label [[ELSE:%.*]]
+; CHECK:       then:
+; CHECK-NEXT:    [[CMP2:%.*]] = icmp sgt i128 [[X]], 0
+; CHECK-NEXT:    ret i1 [[CMP2]]
+; CHECK:       else:
+; CHECK-NEXT:    ret i1 false
+;
+  %val = mul nsw i128 %x, 9223372036854775808
+  %cmp = icmp sgt i128 %x, %val
+  br i1 %cmp, label %then, label %else
+
+then:
+  %cmp2 = icmp sgt i128 %x, 0
+  ret i1 %cmp2
+
+else:
+  ret i1 false
+}
+
 define i1 @add_nuw_decomp_recursive() {
 ; CHECK-LABEL: @add_nuw_decomp_recursive(
 ; CHECK-NEXT:    [[ADD:%.*]] = add nuw nsw i64 -9223372036854775808, 10
@@ -398,6 +422,19 @@ entry:
   %cmp.uge = icmp uge ptr %gep.1, %gep.2
   %res = xor i1 %cmp.ule, %cmp.ule
   ret i1 %res
+}
+
+define i1 @pr68751(i128 %arg) {
+; CHECK-LABEL: @pr68751(
+; CHECK-NEXT:    [[SHL1:%.*]] = shl nuw nsw i128 [[ARG:%.*]], 32
+; CHECK-NEXT:    [[SHL2:%.*]] = shl nuw nsw i128 [[SHL1]], 32
+; CHECK-NEXT:    [[CMP:%.*]] = icmp eq i128 [[SHL2]], 0
+; CHECK-NEXT:    ret i1 [[CMP]]
+;
+  %shl1 = shl nuw nsw i128 %arg, 32
+  %shl2 = shl nuw nsw i128 %shl1, 32
+  %cmp = icmp eq i128 %shl2, 0
+  ret i1 %cmp
 }
 
 declare void @llvm.assume(i1)

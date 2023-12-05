@@ -2379,10 +2379,15 @@ static bool CheckEvaluationResult(CheckEvaluationResultKind CERK,
                                   const FieldDecl *SubobjectDecl,
                                   CheckedTemporaries &CheckedTemps) {
   if (!Value.hasValue()) {
-    assert(SubobjectDecl && "SubobjectDecl shall be non-null");
-    Info.FFDiag(DiagLoc, diag::note_constexpr_uninitialized) << SubobjectDecl;
-    Info.Note(SubobjectDecl->getLocation(),
-              diag::note_constexpr_subobject_declared_here);
+    if (SubobjectDecl) {
+      Info.FFDiag(DiagLoc, diag::note_constexpr_uninitialized)
+          << /*(name)*/ 1 << SubobjectDecl;
+      Info.Note(SubobjectDecl->getLocation(),
+                diag::note_constexpr_subobject_declared_here);
+    } else {
+      Info.FFDiag(DiagLoc, diag::note_constexpr_uninitialized)
+          << /*of type*/ 0 << Type;
+    }
     return false;
   }
 
@@ -2418,9 +2423,16 @@ static bool CheckEvaluationResult(CheckEvaluationResultKind CERK,
     if (const CXXRecordDecl *CD = dyn_cast<CXXRecordDecl>(RD)) {
       unsigned BaseIndex = 0;
       for (const CXXBaseSpecifier &BS : CD->bases()) {
-        if (!CheckEvaluationResult(CERK, Info, DiagLoc, BS.getType(),
-                                   Value.getStructBase(BaseIndex), Kind,
-                                   /*SubobjectDecl=*/nullptr, CheckedTemps))
+        const APValue &BaseValue = Value.getStructBase(BaseIndex);
+        if (!BaseValue.hasValue()) {
+          SourceLocation TypeBeginLoc = BS.getBaseTypeLoc();
+          Info.FFDiag(TypeBeginLoc, diag::note_constexpr_uninitialized_base)
+              << BS.getType() << SourceRange(TypeBeginLoc, BS.getEndLoc());
+          return false;
+        }
+        if (!CheckEvaluationResult(CERK, Info, DiagLoc, BS.getType(), BaseValue,
+                                   Kind, /*SubobjectDecl=*/nullptr,
+                                   CheckedTemps))
           return false;
         ++BaseIndex;
       }
@@ -6006,8 +6018,9 @@ const AccessKinds StartLifetimeOfUnionMemberHandler::AccessKind;
 /// operator whose left-hand side might involve a union member access. If it
 /// does, implicitly start the lifetime of any accessed union elements per
 /// C++20 [class.union]5.
-static bool HandleUnionActiveMemberChange(EvalInfo &Info, const Expr *LHSExpr,
-                                          const LValue &LHS) {
+static bool MaybeHandleUnionActiveMemberChange(EvalInfo &Info,
+                                               const Expr *LHSExpr,
+                                               const LValue &LHS) {
   if (LHS.InvalidBase || LHS.Designator.Invalid)
     return false;
 
@@ -6062,8 +6075,14 @@ static bool HandleUnionActiveMemberChange(EvalInfo &Info, const Expr *LHSExpr,
         break;
       // Walk path backwards as we walk up from the base to the derived class.
       for (const CXXBaseSpecifier *Elt : llvm::reverse(ICE->path())) {
+        if (Elt->isVirtual()) {
+          // A class with virtual base classes never has a trivial default
+          // constructor, so S(E) is empty in this case.
+          E = nullptr;
+          break;
+        }
+
         --PathLength;
-        (void)Elt;
         assert(declaresSameEntity(Elt->getType()->getAsCXXRecordDecl(),
                                   LHS.Designator.Entries[PathLength]
                                       .getAsBaseOrMember().getPointer()));
@@ -7741,7 +7760,7 @@ public:
         // per C++20 [class.union]5.
         if (Info.getLangOpts().CPlusPlus20 && OCE &&
             OCE->getOperator() == OO_Equal && MD->isTrivial() &&
-            !HandleUnionActiveMemberChange(Info, Args[0], ThisVal))
+            !MaybeHandleUnionActiveMemberChange(Info, Args[0], ThisVal))
           return false;
 
         Args = Args.slice(1);
@@ -8614,7 +8633,7 @@ bool LValueExprEvaluator::VisitBinAssign(const BinaryOperator *E) {
     return false;
 
   if (Info.getLangOpts().CPlusPlus20 &&
-      !HandleUnionActiveMemberChange(Info, E->getLHS(), Result))
+      !MaybeHandleUnionActiveMemberChange(Info, E->getLHS(), Result))
     return false;
 
   return handleAssignment(this->Info, E, Result, E->getLHS()->getType(),
