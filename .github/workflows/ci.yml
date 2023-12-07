@@ -135,6 +135,7 @@ jobs:
         run: |
           cmake -S clang -B build-clang -G Ninja \
               -DCMAKE_BUILD_TYPE=Release \
+              -DLLVM_INCLUDE_TESTS=OFF \
               -DLLVM_ENABLE_LIBEDIT=OFF
           cmake --build build-clang
           cmake --install build-clang --prefix=${OPT}/llvm-codon

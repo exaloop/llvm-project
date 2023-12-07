@@ -20,6 +20,7 @@ cmake --install build-llvm --prefix=/opt/llvm-codon
 
 cmake -S clang -B build-clang -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
+    -DLLVM_INCLUDE_TESTS=OFF \
     -DLLVM_ENABLE_LIBEDIT=OFF
 cmake --build build-clang
 cmake --install build-clang --prefix=/opt/llvm-codon
