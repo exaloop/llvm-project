@@ -48,13 +48,6 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Cache Dependencies
-        id: cache-deps
-        uses: actions/cache@v2
-        with:
-          path: llvm
-          key: manylinux-llvm
-
       - name: Main
         uses: ./.github/actions/build-manylinux
 
@@ -130,13 +123,14 @@ jobs:
               -DLLVM_ENABLE_LIBEDIT=OFF
           cmake --build build-llvm
           cmake --install build-llvm --prefix=${OPT}/llvm-codon
+          echo "LLVM_CMAKE_DIR=$(${OPT}/llvm-codon/bin/llvm-config --cmakedir)" >> $GITHUB_ENV
+          echo "LLVM_DIR=$(${OPT}/llvm-codon/bin/llvm-config --cmakedir)" >> $GITHUB_ENV
 
       - name: Build Clang
         run: |
           cmake -S clang -B build-clang -G Ninja \
               -DCMAKE_BUILD_TYPE=Release \
-              -DLLVM_INCLUDE_TESTS=OFF \
-              -DLLVM_ENABLE_LIBEDIT=OFF
+              -DLLVM_INCLUDE_TESTS=OFF
           cmake --build build-clang
           cmake --install build-clang --prefix=${OPT}/llvm-codon
 
