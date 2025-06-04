@@ -11,6 +11,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/IR/Dominators.h"
@@ -56,7 +57,7 @@ private:
 class CoroIdElider {
 public:
   CoroIdElider(CoroIdInst *CoroId, FunctionElideInfo &FEI, AAResults &AA,
-               DominatorTree &DT, OptimizationRemarkEmitter &ORE);
+               OptimizationRemarkEmitter &ORE);
   void elideHeapAllocations(uint64_t FrameSize, Align FrameAlign);
   bool lifetimeEligibleForElide() const;
   bool attemptElide();
@@ -67,13 +68,35 @@ private:
   CoroIdInst *CoroId;
   FunctionElideInfo &FEI;
   AAResults &AA;
-  DominatorTree &DT;
   OptimizationRemarkEmitter &ORE;
 
   SmallVector<CoroBeginInst *, 1> CoroBegins;
   SmallVector<CoroAllocInst *, 1> CoroAllocs;
   SmallVector<CoroSubFnInst *, 4> ResumeAddr;
   DenseMap<CoroBeginInst *, SmallVector<CoroSubFnInst *, 4>> DestroyAddr;
+};
+
+struct CoroCaptureTracker : public CaptureTracker {
+  CoroCaptureTracker() : Captured(false) {}
+
+  bool captured(const Use *U) override {
+    Captured = true;
+    return true;
+  }
+
+  bool shouldExplore(const Use *U) override {
+    Instruction *I = cast<Instruction>(U->getUser());
+    if (auto *C = dyn_cast<CallBase>(I)) {
+      const bool Explore = isa<Function>(C->getCalledOperand()) &&
+                           !C->doesNotCapture(C->getArgOperandNo(U));
+      return Explore;
+    }
+    return true;
+  }
+
+  void tooManyUses() override { Captured = true; }
+
+  bool Captured;
 };
 } // end anonymous namespace
 
@@ -182,9 +205,8 @@ void FunctionElideInfo::collectPostSplitCoroIds() {
 }
 
 CoroIdElider::CoroIdElider(CoroIdInst *CoroId, FunctionElideInfo &FEI,
-                           AAResults &AA, DominatorTree &DT,
-                           OptimizationRemarkEmitter &ORE)
-    : CoroId(CoroId), FEI(FEI), AA(AA), DT(DT), ORE(ORE) {
+                           AAResults &AA, OptimizationRemarkEmitter &ORE)
+    : CoroId(CoroId), FEI(FEI), AA(AA), ORE(ORE) {
   // Collect all coro.begin and coro.allocs associated with this coro.id.
   for (User *U : CoroId->users()) {
     if (auto *CB = dyn_cast<CoroBeginInst>(U))
@@ -342,60 +364,14 @@ bool CoroIdElider::lifetimeEligibleForElide() const {
   if (CoroAllocs.empty())
     return false;
 
-  // Check that for every coro.begin there is at least one coro.destroy directly
-  // referencing the SSA value of that coro.begin along each
-  // non-exceptional path.
-  //
-  // If the value escaped, then coro.destroy would have been referencing a
-  // memory location storing that value and not the virtual register.
-
-  SmallPtrSet<BasicBlock *, 8> Terminators;
-  // First gather all of the terminators for the function.
-  // Consider the final coro.suspend as the real terminator when the current
-  // function is a coroutine.
-  for (BasicBlock &B : *FEI.ContainingFunction) {
-    auto *TI = B.getTerminator();
-
-    if (TI->getNumSuccessors() != 0 || isa<UnreachableInst>(TI))
-      continue;
-
-    Terminators.insert(&B);
-  }
-
-  // Filter out the coro.destroy that lie along exceptional paths.
-  for (const auto *CB : CoroBegins) {
-    auto It = DestroyAddr.find(CB);
-
-    // FIXME: If we have not found any destroys for this coro.begin, we
-    // disqualify this elide.
-    if (It == DestroyAddr.end())
-      return false;
-
-    const auto &CorrespondingDestroyAddrs = It->second;
-
-    // If every terminators is dominated by coro.destroy, we could know the
-    // corresponding coro.begin wouldn't escape.
-    auto DominatesTerminator = [&](auto *TI) {
-      return llvm::any_of(CorrespondingDestroyAddrs, [&](auto *Destroy) {
-        return DT.dominates(Destroy, TI->getTerminator());
-      });
-    };
-
-    if (llvm::all_of(Terminators, DominatesTerminator))
-      continue;
-
-    // Otherwise canCoroBeginEscape would decide whether there is any paths from
-    // coro.begin to Terminators which not pass through any of the
-    // coro.destroys. This is a slower analysis.
-    //
-    // canCoroBeginEscape is relatively slow, so we avoid to run it as much as
-    // possible.
-    if (canCoroBeginEscape(CB, Terminators))
+  // Ensure no coroutine handle escapes the parent function.
+  for (CoroBeginInst *CB : CoroBegins) {
+    CoroCaptureTracker CCT;
+    PointerMayBeCaptured(CB, &CCT, /*MaxUsesToExplore=*/32);
+    if (CCT.Captured)
       return false;
   }
 
-  // We have checked all CoroBegins and their paths to the terminators without
-  // finding disqualifying code patterns, so we can perform heap allocations.
   return true;
 }
 
@@ -475,12 +451,11 @@ PreservedAnalyses CoroElidePass::run(Function &F, FunctionAnalysisManager &AM) {
     return PreservedAnalyses::all();
 
   AAResults &AA = AM.getResult<AAManager>(F);
-  DominatorTree &DT = AM.getResult<DominatorTreeAnalysis>(F);
   auto &ORE = AM.getResult<OptimizationRemarkEmitterAnalysis>(F);
 
   bool Changed = false;
   for (auto *CII : FEI.getCoroIds()) {
-    CoroIdElider CIE(CII, FEI, AA, DT, ORE);
+    CoroIdElider CIE(CII, FEI, AA, ORE);
     Changed |= CIE.attemptElide();
   }
 
