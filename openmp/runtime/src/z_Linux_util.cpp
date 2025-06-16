@@ -526,6 +526,10 @@ static kmp_int32 __kmp_set_stack_info(int gtid, kmp_info_t *th) {
 }
 
 static void *__kmp_launch_worker(void *thr) {
+  kmp_gc_stack_base_t sb;
+  __kmp_gc_get_stack_base(&sb);
+  __kmp_gc_register_thread(&sb);
+
   int status, old_type, old_state;
 #ifdef KMP_BLOCK_SIGNALS
   sigset_t new_set, old_set;

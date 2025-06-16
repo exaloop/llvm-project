@@ -988,6 +988,10 @@ kmp_uint64 __kmp_now_nsec() {
 }
 
 extern "C" void *__stdcall __kmp_launch_worker(void *arg) {
+  kmp_gc_stack_base_t sb;
+  __kmp_gc_get_stack_base(&sb);
+  __kmp_gc_register_thread(&sb);
+
   volatile void *stack_data;
   void *exit_val;
   void *padding = 0;

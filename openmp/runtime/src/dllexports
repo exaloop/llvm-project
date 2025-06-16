@@ -1266,6 +1266,7 @@ kmp_set_disp_num_buffers                    890
     __kmpc_atomic_val_2_cas_cpt            2156
     __kmpc_atomic_val_4_cas_cpt            2157
     __kmpc_atomic_val_8_cas_cpt            2158
+    __kmpc_set_gc_callbacks                2159
     %endif
 
     # No longer need to put ordinal numbers

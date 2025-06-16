@@ -139,6 +139,7 @@ static void __kmp_free_task_stack(kmp_int32 gtid,
     stack_block->sb_next = NULL;
     stack_block->sb_prev = NULL;
     if (stack_block != &task_stack->ts_first_block) {
+      __kmp_gc_del_roots(stack_block, sizeof(kmp_stack_block_t));
       __kmp_thread_free(thread,
                         stack_block); // free the block, if not the first
     }
@@ -191,6 +192,7 @@ static void __kmp_push_task_stack(kmp_int32 gtid, kmp_info_t *thread,
     } else { // Alloc new block and link it up
       kmp_stack_block_t *new_block = (kmp_stack_block_t *)__kmp_thread_calloc(
           thread, sizeof(kmp_stack_block_t));
+      __kmp_gc_add_roots(new_block, sizeof(kmp_stack_block_t));
 
       task_stack->ts_top = &new_block->sb_block[0];
       stack_block->sb_next = new_block;
@@ -321,6 +323,10 @@ static void __kmp_realloc_task_deque(kmp_info_t *thread,
 
   kmp_taskdata_t **new_deque =
       (kmp_taskdata_t **)__kmp_allocate(new_size * sizeof(kmp_taskdata_t *));
+
+  // Codon GC fixes
+  __kmp_gc_del_roots(thread_data->td.td_deque, size * sizeof(kmp_taskdata_t *));
+  __kmp_gc_add_roots(new_deque, new_size * sizeof(kmp_taskdata_t *));
 
   int i, j;
   for (i = thread_data->td.td_deque_head, j = 0; j < size;
@@ -907,12 +913,15 @@ static void __kmp_free_task(kmp_int32 gtid, kmp_taskdata_t *taskdata,
   // do not free tasks in taskgraph
   if (!taskdata->is_taskgraph) {
 #endif
-// deallocate the taskdata and shared variable blocks associated with this task
+if (!__gc_callbacks.add_roots) {
+  // deallocate the taskdata and shared variable blocks associated with this task
+  // Codon: disable this
 #if USE_FAST_MEMORY
-  __kmp_fast_free(thread, taskdata);
+    __kmp_fast_free(thread, taskdata);
 #else /* ! USE_FAST_MEMORY */
-  __kmp_thread_free(thread, taskdata);
+    __kmp_thread_free(thread, taskdata);
 #endif
+  }
 #if OMPX_TASKGRAPH
   } else {
     taskdata->td_flags.complete = 0;
@@ -1442,6 +1451,19 @@ static size_t __kmp_round_up_to_val(size_t size, size_t val) {
   return size;
 } // __kmp_round_up_to_va
 
+// Codon addition
+// __kmpc_omp_task_alloc_size: Figure out allocation size for taskdata
+// sizeof_kmp_task_t:  Size in bytes of kmp_task_t data structure including
+// private vars accessed in task.
+// sizeof_shareds:  Size in bytes of array of pointers to shared vars accessed
+// in task.
+// returns: size in bytes of taskdata to be allocated.
+size_t __kmpc_omp_task_alloc_size(size_t sizeof_kmp_task_t, size_t sizeof_shareds) {
+  size_t shareds_offset = sizeof(kmp_taskdata_t) + sizeof_kmp_task_t;
+  shareds_offset = __kmp_round_up_to_val(shareds_offset, sizeof(void *));
+  return shareds_offset + sizeof_shareds;
+}
+
 // __kmp_task_alloc: Allocate the taskdata and task data structures for a task
 //
 // loc_ref: source location information
@@ -1457,7 +1479,8 @@ static size_t __kmp_round_up_to_val(size_t size, size_t val) {
 kmp_task_t *__kmp_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
                              kmp_tasking_flags_t *flags,
                              size_t sizeof_kmp_task_t, size_t sizeof_shareds,
-                             kmp_routine_entry_t task_entry) {
+                             kmp_routine_entry_t task_entry,
+                             kmp_taskdata_t *preallocated) {
   kmp_task_t *task;
   kmp_taskdata_t *taskdata;
   kmp_info_t *thread = __kmp_threads[gtid];
@@ -1553,14 +1576,20 @@ kmp_task_t *__kmp_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
   KA_TRACE(30, ("__kmp_task_alloc: T#%d Second malloc size: %ld\n", gtid,
                 sizeof_shareds));
 
-  // Avoid double allocation here by combining shareds with taskdata
-#if USE_FAST_MEMORY
-  taskdata = (kmp_taskdata_t *)__kmp_fast_allocate(thread, shareds_offset +
-                                                               sizeof_shareds);
-#else /* ! USE_FAST_MEMORY */
-  taskdata = (kmp_taskdata_t *)__kmp_thread_malloc(thread, shareds_offset +
-                                                               sizeof_shareds);
-#endif /* USE_FAST_MEMORY */
+  if (preallocated == NULL) {
+    KMP_DEBUG_ASSERT(!__gc_callbacks.add_roots);
+    // Avoid double allocation here by combining shareds with taskdata
+    #if USE_FAST_MEMORY
+      taskdata = (kmp_taskdata_t *)__kmp_fast_allocate(thread, shareds_offset +
+                                                                  sizeof_shareds);
+    #else /* ! USE_FAST_MEMORY */
+      taskdata = (kmp_taskdata_t *)__kmp_thread_malloc(thread, shareds_offset +
+                                                                  sizeof_shareds);
+    #endif /* USE_FAST_MEMORY */
+  } else {
+    KMP_DEBUG_ASSERT(__gc_callbacks.add_roots);
+    taskdata = preallocated;
+  }
 
   task = KMP_TASKDATA_TO_TASK(taskdata);
 
@@ -1685,7 +1714,8 @@ kmp_task_t *__kmp_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
 kmp_task_t *__kmpc_omp_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
                                   kmp_int32 flags, size_t sizeof_kmp_task_t,
                                   size_t sizeof_shareds,
-                                  kmp_routine_entry_t task_entry) {
+                                  kmp_routine_entry_t task_entry,
+                                  kmp_taskdata_t *preallocated) {
   kmp_task_t *retval;
   kmp_tasking_flags_t *input_flags = (kmp_tasking_flags_t *)&flags;
   __kmp_assert_valid_gtid(gtid);
@@ -1699,7 +1729,7 @@ kmp_task_t *__kmpc_omp_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
                 sizeof_shareds, task_entry));
 
   retval = __kmp_task_alloc(loc_ref, gtid, input_flags, sizeof_kmp_task_t,
-                            sizeof_shareds, task_entry);
+                            sizeof_shareds, task_entry, preallocated);
 
   KA_TRACE(20, ("__kmpc_omp_task_alloc(exit): T#%d retval %p\n", gtid, retval));
 
@@ -2557,6 +2587,7 @@ void *__kmp_task_reduction_init(int gtid, int num, T *data) {
     if (!arr[i].flags.lazy_priv) {
       // allocate cache-line aligned block and fill it with zeros
       arr[i].reduce_priv = __kmp_allocate(nth * size);
+      __kmp_gc_add_roots(arr[i].reduce_priv, nth * size);
       arr[i].reduce_pend = (char *)(arr[i].reduce_priv) + nth * size;
       if (arr[i].reduce_init != NULL) {
         // initialize all thread-specific items
@@ -2710,6 +2741,7 @@ void *__kmpc_task_reduction_get_th_data(int gtid, void *tskgrp, void *data) {
         if (p_priv[tid] == NULL) {
           // allocate thread specific object lazily
           p_priv[tid] = __kmp_allocate(arr[i].reduce_size);
+          __kmp_gc_add_roots(p_priv[tid], arr[i].reduce_size);
           if (arr[i].reduce_init != NULL) {
             if (arr[i].reduce_orig != NULL) { // new interface
               ((void (*)(void *, void *))arr[i].reduce_init)(
@@ -2753,6 +2785,7 @@ static void __kmp_task_reduction_fini(kmp_info_t *th, kmp_taskgroup_t *tg) {
         if (f_fini)
           f_fini(priv_data); // finalize if needed
       }
+      __kmp_gc_del_roots(pr_data, nth * size);
     } else {
       void **pr_data = (void **)(arr[i].reduce_priv);
       for (int j = 0; j < nth; ++j) {
@@ -2760,6 +2793,7 @@ static void __kmp_task_reduction_fini(kmp_info_t *th, kmp_taskgroup_t *tg) {
           f_comb(sh_data, pr_data[j]); // combine results
           if (f_fini)
             f_fini(pr_data[j]); // finalize if needed
+          __kmp_gc_del_roots(pr_data[j], arr[i].reduce_size);
           __kmp_free(pr_data[j]);
         }
       }
@@ -3786,6 +3820,7 @@ static void __kmp_alloc_task_deque(kmp_info_t *thread,
   thread_data->td.td_deque = (kmp_taskdata_t **)__kmp_allocate(
       INITIAL_TASK_DEQUE_SIZE * sizeof(kmp_taskdata_t *));
   thread_data->td.td_deque_size = INITIAL_TASK_DEQUE_SIZE;
+  __kmp_gc_add_roots(thread_data->td.td_deque, INITIAL_TASK_DEQUE_SIZE * sizeof(kmp_taskdata_t *));
 }
 
 // __kmp_free_task_deque:
@@ -3795,6 +3830,7 @@ static void __kmp_free_task_deque(kmp_thread_data_t *thread_data) {
   if (thread_data->td.td_deque != NULL) {
     __kmp_acquire_bootstrap_lock(&thread_data->td.td_deque_lock);
     TCW_4(thread_data->td.td_deque_ntasks, 0);
+    __kmp_gc_del_roots(thread_data->td.td_deque, thread_data->td.td_deque_size * sizeof(kmp_taskdata_t *));
     __kmp_free(thread_data->td.td_deque);
     thread_data->td.td_deque = NULL;
     __kmp_release_bootstrap_lock(&thread_data->td.td_deque_lock);
@@ -3871,6 +3907,7 @@ static int __kmp_realloc_task_threads_data(kmp_info_t *thread,
 #endif // BUILD_TIED_TASK_STACK
        // Install the new data and free the old data
         (*threads_data_p) = new_data;
+        __kmp_gc_del_roots(old_data, maxthreads * sizeof(kmp_thread_data_t));
         __kmp_free(old_data);
       } else {
         KE_TRACE(10, ("__kmp_realloc_task_threads_data: T#%d allocating "

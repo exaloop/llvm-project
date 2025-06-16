@@ -84,9 +84,6 @@ VERSION {
         __kmp_itt_init_ittlib;
 #endif /* USE_ITT_BUILD */
 
-    local: # Non-exported symbols.
-
-        *;         # All other symbols are not exported.
 
 }; # VERSION
 

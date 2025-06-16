@@ -3927,6 +3927,7 @@ int __kmp_register_root(int initial_thread) {
     root_thread = root->r.r_uber_thread;
   } else {
     root_thread = (kmp_info_t *)__kmp_allocate(sizeof(kmp_info_t));
+    __kmp_gc_add_roots(&(root_thread->th.th_current_task), sizeof(kmp_taskdata_t *));
     if (__kmp_storage_map) {
       __kmp_print_thread_storage_map(root_thread, gtid);
     }
@@ -4551,6 +4552,7 @@ kmp_info_t *__kmp_allocate_thread(kmp_root_t *root, kmp_team_t *team,
 
   /* allocate space for it. */
   new_thr = (kmp_info_t *)__kmp_allocate(sizeof(kmp_info_t));
+  __kmp_gc_add_roots(&(new_thr->th.th_current_task), sizeof(kmp_taskdata_t *));
 
   new_thr->th.th_nt_strict = false;
   new_thr->th.th_nt_loc = NULL;
@@ -9246,7 +9248,8 @@ void __kmp_add_threads_to_team(kmp_team_t *team, int new_nthreads) {
 kmp_info_t **__kmp_hidden_helper_threads;
 kmp_info_t *__kmp_hidden_helper_main_thread;
 std::atomic<kmp_int32> __kmp_unexecuted_hidden_helper_tasks;
-#if KMP_OS_LINUX
+// Codon-specific: Disable hidden helper threads
+#if 0 // KMP_OS_LINUX
 kmp_int32 __kmp_hidden_helper_threads_num = 8;
 kmp_int32 __kmp_enable_hidden_helper = TRUE;
 #else
@@ -9383,6 +9386,20 @@ void __kmp_set_nesting_mode_threads() {
   }
   if (__kmp_nesting_mode == 1) // turn on nesting for this case only
     set__max_active_levels(thread, __kmp_nesting_mode_nlevels);
+}
+
+// Codon GC fixes
+kmp_gc_callbacks __gc_callbacks = { NULL, NULL, NULL, NULL };
+
+void __kmpc_set_gc_callbacks(gc_setup_callback get_stack_base,
+                             gc_setup_callback register_thread,
+                             gc_roots_callback add_roots,
+                             gc_roots_callback del_roots) {
+  __gc_callbacks.get_stack_base = get_stack_base;
+  __gc_callbacks.register_thread = register_thread;
+  __gc_callbacks.add_roots = add_roots;
+  __gc_callbacks.del_roots = del_roots;
+  __kmp_do_serial_initialize();
 }
 
 // Empty symbols to export (see exports_so.txt) when feature is disabled
