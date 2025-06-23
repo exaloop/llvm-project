@@ -1859,11 +1859,14 @@ bool CallAnalyzer::allowSizeGrowth(CallBase &Call) {
   // For now, we are not handling this corner case here as it is rare in real
   // code. In future, we should elaborate this based on BPI and BFI in more
   // general threshold adjusting heuristics in updateThreshold().
-  if (InvokeInst *II = dyn_cast<InvokeInst>(&Call)) {
-    if (isa<UnreachableInst>(II->getNormalDest()->getTerminator()))
-      return false;
-  } else if (isa<UnreachableInst>(Call.getParent()->getTerminator()))
-    return false;
+
+  // NOTE: Changed for Codon-LLVM -- don't disable inlining in
+  //       unreachable-terminated blocks!
+  // if (InvokeInst *II = dyn_cast<InvokeInst>(&Call)) {
+  //   if (isa<UnreachableInst>(II->getNormalDest()->getTerminator()))
+  //     return false;
+  // } else if (isa<UnreachableInst>(Call.getParent()->getTerminator()))
+  //   return false;
 
   return true;
 }
