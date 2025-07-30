@@ -52,7 +52,7 @@ jobs:
 
       - name: Build (macOS)
         if: startsWith(matrix.os, 'macos')
-        run: bash .github/actions/build-linux-x86_64/entrypoint.sh
+        run: bash .github/actions/build-linux-x86_64/entrypoint.sh ${{ github.workspace }}
 
       - name: Upload Release Asset
         if: contains(github.ref, 'tags/codon-')

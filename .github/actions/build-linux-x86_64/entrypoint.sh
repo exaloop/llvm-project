@@ -1,7 +1,9 @@
 #!/bin/sh -l
 set -e
 
-cd /github/workspace
+WORKSPACE="${1:-/github/workspace}"
+echo "Workspace: ${WORKSPACE}"
+cd "$WORKSPACE"
 
 export VERSION="$(git describe --tags --abbrev=0)"
 export FULL_VERSION="$(git describe --tags --abbrev=0)-$(git rev-parse --short HEAD)"
