@@ -55,6 +55,7 @@ jobs:
         run: |
           sudo mkdir -p /opt/llvm-codon
           sudo chown -R $(whoami) /opt/llvm-codon
+          touch /opt/llvm-codon/.permission
           bash .github/actions/build-linux-x86_64/entrypoint.sh ${{ github.workspace }}
 
       - name: Upload Release Asset
