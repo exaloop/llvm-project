@@ -42,9 +42,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build (Ubuntu)
-        if: startsWith(matrix.os, 'ubuntu')
-        uses: ./.github/actions/build-${{ matrix.arch }}
+      - name: Build (Ubuntu x86-64)
+        if: matrix.arch == 'linux-x86_64'
+        uses: ./.github/actions/build-linux-x86_64
+
+      - name: Build (Ubuntu aarch64)
+        if: matrix.arch == 'linux-aarch64'
+        uses: ./.github/actions/build-linux-aarch64
 
       - name: Build (macOS)
         if: startsWith(matrix.os, 'macos')
