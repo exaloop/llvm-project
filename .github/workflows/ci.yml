@@ -44,7 +44,7 @@ jobs:
 
       - name: Build (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
-        uses: ./.github/actions/build-{{ matrix.arch }}
+        uses: ./.github/actions/build-${{ matrix.arch }}
 
       - name: Build (macOS)
         if: startsWith(matrix.os, 'macos')

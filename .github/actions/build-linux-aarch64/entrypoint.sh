@@ -15,7 +15,7 @@ cmake -S llvm-src/llvm -G Ninja \
   -DLLVM_ENABLE_ZLIB=OFF \
   -DLLVM_TARGETS_TO_BUILD=all \
   -DLLVM_BUILD_TOOLS=OFF \
-  -DLLVM_ENABLE_PROJECTS=clang
+  -DLLVM_ENABLE_PROJECTS="clang;openmp"
 
 cmake --build llvm-src/llvm/build
 
