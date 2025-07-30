@@ -10,8 +10,8 @@ export VERSION="$(git describe --tags --abbrev=0)"
 export FULL_VERSION="$(git describe --tags --abbrev=0)-$(git rev-parse --short HEAD)"
 export ARCH="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
 
-cmake -S llvm-src/llvm -G Ninja \
-  -B llvm-src/llvm/build \
+cmake -S llvm -G Ninja \
+  -B llvm/build \
   -DCMAKE_BUILD_TYPE=Release \
   -DLLVM_INCLUDE_TESTS=OFF \
   -DLLVM_ENABLE_RTTI=ON \
@@ -20,9 +20,9 @@ cmake -S llvm-src/llvm -G Ninja \
   -DLLVM_BUILD_TOOLS=OFF \
   -DLLVM_ENABLE_PROJECTS="clang;openmp"
 
-cmake --build llvm-src/llvm/build
+cmake --build llvm/build
 
-cmake --install llvm-src/llvm/build --prefix=/opt/llvm-codon
+cmake --install llvm/build --prefix=/opt/llvm-codon
 
 touch "/opt/llvm-codon/llvm-codon-${FULL_VERSION}-${ARCH}.version"
 
