@@ -1,0 +1,68 @@
+name: LLVM-Codon CI
+
+on:
+  push:
+    branches:
+      - codon
+      - 'codon-*'
+    tags:
+      - '*'
+
+jobs:
+  create_release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    permissions:
+      contents: write
+    steps:
+      - name: Create Release
+        if: contains(github.ref, 'tags/codon-')
+        id: create_release
+        uses: ncipollo/release-action@v1
+
+  manylinux:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: linux-x86_64
+          - os: ubuntu-24.04-arm
+            arch: linux-aarch64
+          - os: macos-13
+            arch: darwin-x86_64
+          - os: macos-14
+            arch: darwin-arm64
+    runs-on: ${{ matrix.os }}
+    name: LLVM-Codon CI
+    needs: create_release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (Ubuntu)
+        if: startsWith(matrix.os, 'ubuntu')
+        uses: ./.github/actions/build-{{ matrix.arch }}
+
+      - name: Build (macOS)
+        if: startsWith(matrix.os, 'macos')
+        uses: bash .github/actions/build-manylinux-x86_64/entrypoint.sh
+
+      - name: Upload Release Asset
+        if: contains(github.ref, 'tags/codon-')
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create_release.outputs.upload_url }}
+          asset_path: ./llvm-${{ github.ref_name }}-${{ matrix.arch }}.tar.bz2
+          asset_name: llvm-${{ github.ref_name }}-${{ matrix.arch }}.tar.bz2
+          asset_content_type: application/bzip2
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: llvm-${{ github.ref_name }}-${{ matrix.arch }}.tar.bz2
+          path: llvm-${{ github.ref_name }}-${{ matrix.arch }}.tar.bz2
