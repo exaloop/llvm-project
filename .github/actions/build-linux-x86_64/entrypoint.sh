@@ -6,8 +6,7 @@ echo "Workspace: ${WORKSPACE}"
 cd "$WORKSPACE"
 ls -lah
 
-export VERSION="$(git describe --tags --abbrev=0)"
-export FULL_VERSION="$(git describe --tags --abbrev=0)-$(git rev-parse --short HEAD)"
+export COMMIT="$(git rev-parse --short HEAD)"
 export ARCH="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
 
 cmake -S llvm -G Ninja \
@@ -24,7 +23,7 @@ cmake --build llvm/build
 
 cmake --install llvm/build --prefix=/opt/llvm-codon
 
-touch "/opt/llvm-codon/llvm-codon-${FULL_VERSION}-${ARCH}.version"
+touch "/opt/llvm-codon/llvm-codon-${COMMIT}-${ARCH}.version"
 
-tar cjvf llvm-${VERSION}-${ARCH}.tar.bz2 -C /opt llvm-codon/
-du -sh llvm-${VERSION}-${ARCH}.tar.bz2
+tar cjvf llvm-${ARCH}.tar.bz2 -C /opt llvm-codon/
+du -sh llvm-${ARCH}.tar.bz2

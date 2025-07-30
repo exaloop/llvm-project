@@ -55,7 +55,6 @@ jobs:
         run: |
           sudo mkdir -p /opt/llvm-codon
           sudo chown -R $(whoami) /opt/llvm-codon
-          touch /opt/llvm-codon/.permission
           bash .github/actions/build-linux-x86_64/entrypoint.sh ${{ github.workspace }}
 
       - name: Upload Release Asset
@@ -65,7 +64,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: ./llvm-${{ github.ref_name }}-${{ matrix.arch }}.tar.bz2
+          asset_path: ./llvm-${{ matrix.arch }}.tar.bz2
           asset_name: llvm-${{ github.ref_name }}-${{ matrix.arch }}.tar.bz2
           asset_content_type: application/bzip2
 
@@ -73,4 +72,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: llvm-${{ github.ref_name }}-${{ matrix.arch }}.tar.bz2
-          path: llvm-${{ github.ref_name }}-${{ matrix.arch }}.tar.bz2
+          path: llvm-${{ matrix.arch }}.tar.bz2
