@@ -29,19 +29,19 @@ jobs:
           - os: ubuntu-latest
             arch: linux-x86_64
             docker: manylinux_2_28_x86_64
-          - os: ubuntu-latest
-            arch: manylinux2014-x86_64
-            docker: manylinux_2014_x86_64
-          - os: ubuntu-24.04-arm
-            arch: linux-aarch64
-            docker: manylinux_2_28_aarch64
-          - os: ubuntu-24.04-arm
-            arch: manylinux2014-aarch64
-            docker: manylinux_2014_aarch64
-          - os: macos-13
-            arch: darwin-x86_64
-          - os: macos-14
-            arch: darwin-arm64
+          # - os: ubuntu-latest
+          #   arch: manylinux2014-x86_64
+          #   docker: manylinux_2014_x86_64
+          # - os: ubuntu-24.04-arm
+          #   arch: linux-aarch64
+          #   docker: manylinux_2_28_aarch64
+          # - os: ubuntu-24.04-arm
+          #   arch: manylinux2014-aarch64
+          #   docker: manylinux_2014_aarch64
+          # - os: macos-13
+          #   arch: darwin-x86_64
+          # - os: macos-14
+          #   arch: darwin-arm64
     runs-on: ${{ matrix.os }}
     name: LLVM-Codon CI
     needs: create_release
@@ -52,7 +52,7 @@ jobs:
 
       - name: Build (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
-        uses: docker://quay.io/pypa/manylinux_2_28_aarch64
+        uses: docker://quay.io/pypa/manylinux_2_28_x86_64
         with:
           args: /bin/sh -c ls -lah /github/workspace/**
 
