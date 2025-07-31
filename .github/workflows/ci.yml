@@ -28,16 +28,12 @@ jobs:
         include:
           - os: ubuntu-latest
             arch: linux-x86_64
-            container: manylinux_2_28_x86_64
           - os: ubuntu-latest
             arch: manylinux2014-x86_64
-            container: manylinux2014_x86_64
           - os: ubuntu-24.04-arm
             arch: linux-aarch64
-            container: manylinux_2_28_aarch64
           - os: ubuntu-24.04-arm
             arch: manylinux2014-aarch64
-            container: manylinux2014_aarch64
           - os: macos-13
             arch: darwin-x86_64
           - os: macos-14
@@ -54,7 +50,7 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           cd .github/build-linux
-          docker build -t local -f Dockerfile.${{ matrix.container }} .
+          docker build -t local -f Dockerfile.${{ matrix.arch }} .
           cd ../..
           docker run -v $(pwd):/github/workspace local
 
