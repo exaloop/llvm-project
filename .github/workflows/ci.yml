@@ -31,13 +31,13 @@ jobs:
             container: manylinux_2_28_x86_64
           - os: ubuntu-latest
             arch: manylinux2014-x86_64
-            container: manylinux_2014_x86_64
+            container: manylinux2014_x86_64
           - os: ubuntu-24.04-arm
             arch: linux-aarch64
             container: manylinux_2_28_aarch64
           - os: ubuntu-24.04-arm
             arch: manylinux2014-aarch64
-            container: manylinux_2014_aarch64
+            container: manylinux2014_aarch64
     runs-on: ${{ matrix.os }}
     container: quay.io/pypa/${{ matrix.container }}
     name: LLVM-Codon Linux CI
