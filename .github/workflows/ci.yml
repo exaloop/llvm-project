@@ -28,8 +28,12 @@ jobs:
         include:
           - os: ubuntu-latest
             arch: linux-x86_64
+          - os: ubuntu-latest
+            arch: manylinux2014-x86_64
           - os: ubuntu-24.04-arm
             arch: linux-aarch64
+          - os: ubuntu-24.04-arm
+            arch: manylinux2014-aarch64
           - os: macos-13
             arch: darwin-x86_64
           - os: macos-14
@@ -42,20 +46,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build (Ubuntu x86-64)
-        if: matrix.arch == 'linux-x86_64'
-        uses: ./.github/actions/build-linux-x86_64
-
-      - name: Build (Ubuntu aarch64)
-        if: matrix.arch == 'linux-aarch64'
-        uses: ./.github/actions/build-linux-aarch64
+      - name: Build (Ubuntu)
+        if: startsWith(matrix.os, 'ubuntu')
+        uses: ./.github/actions/build-linux
+        with:
+          version: ${{ matrix.arch }}
 
       - name: Build (macOS)
         if: startsWith(matrix.os, 'macos')
         run: |
           sudo mkdir -p /opt/llvm-codon
           sudo chown -R $(whoami) /opt/llvm-codon
-          bash .github/actions/build-linux-x86_64/entrypoint.sh ${{ github.workspace }}
+          bash .github/actions/build-linux/entrypoint.sh ${{ github.workspace }} ${{ matrix.arch }}
 
       - name: Upload Release Asset
         if: contains(github.ref, 'tags/codon-')
