@@ -59,7 +59,7 @@ jobs:
         run: |
           sudo mkdir -p /opt/llvm-codon
           sudo chown -R $(whoami) /opt/llvm-codon
-          bash .github/actions/build-linux/entrypoint.sh ${{ github.workspace }} ${{ matrix.arch }}
+          bash .github/build-linux/entrypoint.sh ${{ github.workspace }} ${{ matrix.arch }}
 
       - name: Upload Release Asset
         if: contains(github.ref, 'tags/codon-')
