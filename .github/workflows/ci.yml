@@ -39,7 +39,7 @@ jobs:
             arch: manylinux2014-aarch64
             container: manylinux_2014_aarch64
     runs-on: ${{ matrix.os }}
-    container: ${{ matrix.container }}
+    container: docker://quay.io/pypa/${{ matrix.container }}
     name: LLVM-Codon Linux CI
     needs: create_release
     permissions:
