@@ -1,0 +1,4 @@
+FROM quay.io/pypa/manylinux_2_28_x86_64
+COPY entrypoint.sh /entrypoint.sh
+RUN yum -y install ninja-build
+ENTRYPOINT ["/entrypoint.sh", "/github/workspace", "linux-x86_64"]

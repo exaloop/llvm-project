@@ -1,0 +1,9 @@
+name: manylinux build
+description: Builds LLVM on manylinux
+inputs:
+  version:
+    description: 'manylinux version'
+    required: true
+runs:
+  using: docker
+  image: Dockerfile.${{ github.event.inputs.version  }}
