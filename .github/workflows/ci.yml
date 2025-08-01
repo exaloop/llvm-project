@@ -52,7 +52,7 @@ jobs:
           cd .github/build-linux
           docker build -t local -f Dockerfile.${{ matrix.arch }} .
           cd ../..
-          docker run -v $(pwd):/github/workspace local
+          docker run -v $(pwd):/github/workspace local ${{ github.workspace }} ${{ matrix.arch }}
 
       - name: Build (macOS)
         if: startsWith(matrix.os, 'macos')
