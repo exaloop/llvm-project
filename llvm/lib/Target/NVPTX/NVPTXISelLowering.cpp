@@ -1165,7 +1165,7 @@ std::string NVPTXTargetLowering::getPrototype(
   raw_string_ostream O(Prototype);
   O << "prototype_" << UniqueCallSite << " : .callprototype ";
 
-  if (retTy->getTypeID() == Type::VoidTyID) {
+  if (retTy->isVoidTy() || retTy->isEmptyTy()) {
     O << "()";
   } else {
     O << "(";
@@ -1200,8 +1200,14 @@ std::string NVPTXTargetLowering::getPrototype(
   bool first = true;
 
   unsigned NumArgs = VAInfo ? VAInfo->first : Args.size();
-  for (unsigned i = 0, OIdx = 0; i != NumArgs; ++i, ++OIdx) {
+  for (unsigned i = 0, OIdx = 0; i != NumArgs; ++i) {
     Type *Ty = Args[i].Ty;
+
+    if (Ty->isEmptyTy()) {
+      // Empty types are not passed as arguments.
+      continue;
+    }
+
     if (!first) {
       O << ", ";
     }
@@ -1217,8 +1223,7 @@ std::string NVPTXTargetLowering::getPrototype(
         // update the index for Outs
         SmallVector<EVT, 16> vtparts;
         ComputeValueVTs(*this, DL, Ty, vtparts);
-        if (unsigned len = vtparts.size())
-          OIdx += len - 1;
+        OIdx += vtparts.size();
         continue;
       }
       // i8 types in IR will be i16 types in SDAG
@@ -1237,6 +1242,7 @@ std::string NVPTXTargetLowering::getPrototype(
       }
       O << ".param .b" << sz << " ";
       O << "_";
+      ++OIdx;
       continue;
     }
 
@@ -1250,6 +1256,7 @@ std::string NVPTXTargetLowering::getPrototype(
     O << ".param .align " << ParamByValAlign.value() << " .b8 ";
     O << "_";
     O << "[" << Outs[OIdx].Flags.getByValSize() << "]";
+    ++OIdx;
   }
 
   if (VAInfo)
@@ -1450,9 +1457,14 @@ SDValue NVPTXTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   // After all vararg is processed, 'VAOffset' holds the size of the
   // vararg byte array.
 
-  SDValue VADeclareParam;                 // vararg byte array
-  unsigned FirstVAArg = CLI.NumFixedArgs; // position of the first variadic
-  unsigned VAOffset = 0;                  // current offset in the param array
+  SDValue VADeclareParam; // vararg byte array
+  unsigned FirstVAArg = 0; // position of the first variadic PTX parameter
+  for (unsigned I = 0, E = std::min<unsigned>(Args.size(), CLI.NumFixedArgs);
+       I != E; ++I) {
+    if (!Args[I].Ty->isEmptyTy())
+      ++FirstVAArg;
+  }
+  unsigned VAOffset = 0; // current offset in the param array
 
   unsigned UniqueCallSite = GlobalUniqueCallSite.fetch_add(1);
   SDValue TempChain = Chain;
@@ -1472,9 +1484,13 @@ SDValue NVPTXTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   unsigned OIdx = 0;
   // Declare the .params or .reg need to pass values
   // to the function
-  for (unsigned i = 0, e = Args.size(); i != e; ++i, ++OIdx) {
-    EVT VT = Outs[OIdx].VT;
+  for (unsigned i = 0, e = Args.size(); i != e; ++i) {
     Type *Ty = Args[i].Ty;
+
+    if (Ty->isEmptyTy())
+      continue;
+
+    EVT VT = Outs[OIdx].VT;
     bool IsVAArg = (i >= CLI.NumFixedArgs);
     bool IsByVal = Outs[OIdx].Flags.isByVal();
 
@@ -1497,7 +1513,7 @@ SDValue NVPTXTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
       if (IsVAArg)
         VAOffset = alignTo(VAOffset, ArgAlign);
     } else {
-      ArgAlign = getArgumentAlignment(CB, Ty, ParamCount + 1, DL);
+      ArgAlign = getArgumentAlignment(CB, Ty, i + 1, DL);
     }
 
     unsigned TypeSize =
@@ -1668,8 +1684,8 @@ SDValue NVPTXTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
         ++OIdx;
     }
     assert(StoreOperands.empty() && "Unfinished parameter store.");
-    if (!IsByVal && VTs.size() > 0)
-      --OIdx;
+    if (IsByVal)
+      ++OIdx;
     ++ParamCount;
     if (IsByVal && IsVAArg)
       VAOffset += TypeSize;
@@ -1710,7 +1726,15 @@ SDValue NVPTXTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     }
   }
 
-  bool HasVAArgs = CLI.IsVarArg && (CLI.Args.size() > CLI.NumFixedArgs);
+  bool HasVAArgs = false;
+  if (CLI.IsVarArg) {
+    for (unsigned I = CLI.NumFixedArgs, E = Args.size(); I != E; ++I) {
+      if (!Args[I].Ty->isEmptyTy()) {
+        HasVAArgs = true;
+        break;
+      }
+    }
+  }
   // Set the size of the vararg param byte array if the callee is a variadic
   // function and the variadic part is not empty.
   if (HasVAArgs) {
@@ -1756,7 +1780,8 @@ SDValue NVPTXTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
         DL, RetTy, Args, Outs, retAlignment,
         HasVAArgs
             ? std::optional<std::pair<unsigned, const APInt &>>(std::make_pair(
-                  CLI.NumFixedArgs, VADeclareParam->getConstantOperandAPInt(1)))
+                  CLI.NumFixedArgs,
+                  VADeclareParam->getConstantOperandAPInt(1)))
             : std::nullopt,
         *CB, UniqueCallSite);
     const char *ProtoStr = nvTM->getStrPool().save(Proto).data();
@@ -1806,8 +1831,8 @@ SDValue NVPTXTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
                       CallArgBeginOps);
   InGlue = Chain.getValue(1);
 
-  for (unsigned i = 0, e = std::min(CLI.NumFixedArgs + 1, ParamCount); i != e;
-       ++i) {
+  unsigned NumCallParams = HasVAArgs ? FirstVAArg + 1 : ParamCount;
+  for (unsigned i = 0, e = std::min(NumCallParams, ParamCount); i != e; ++i) {
     unsigned opcode;
     if (i == (e - 1))
       opcode = NVPTXISD::LastCallArg;
@@ -3112,9 +3137,14 @@ SDValue NVPTXTargetLowering::LowerFormalArguments(
   // So a different index should be used for indexing into Ins.
   // See similar issue in LowerCall.
   unsigned InsIdx = 0;
+  unsigned ParamIndex = 0;
 
-  for (unsigned i = 0, e = theArgs.size(); i != e; ++i, ++InsIdx) {
+  for (unsigned i = 0, e = theArgs.size(); i != e; ++i) {
     Type *Ty = argTypes[i];
+    const unsigned ArgNo = theArgs[i]->getArgNo();
+
+    if (Ty->isEmptyTy())
+      continue;
 
     if (theArgs[i]->use_empty()) {
       // argument is dead
@@ -3130,8 +3160,7 @@ SDValue NVPTXTargetLowering::LowerFormalArguments(
           InVals.push_back(DAG.getNode(ISD::UNDEF, dl, Ins[InsIdx].VT));
           ++InsIdx;
         }
-        if (vtparts.size() > 0)
-          --InsIdx;
+        ++ParamIndex;
         continue;
       }
       if (Ty->isVectorTy()) {
@@ -3141,11 +3170,12 @@ SDValue NVPTXTargetLowering::LowerFormalArguments(
           InVals.push_back(DAG.getNode(ISD::UNDEF, dl, Ins[InsIdx].VT));
           ++InsIdx;
         }
-        if (NumRegs > 0)
-          --InsIdx;
+        ++ParamIndex;
         continue;
       }
       InVals.push_back(DAG.getNode(ISD::UNDEF, dl, Ins[InsIdx].VT));
+      ++InsIdx;
+      ++ParamIndex;
       continue;
     }
 
@@ -3153,7 +3183,7 @@ SDValue NVPTXTargetLowering::LowerFormalArguments(
     // to newly created nodes. The SDNodes for params have to
     // appear in the same order as their order of appearance
     // in the original function. "i+1" holds that order.
-    if (!PAL.hasParamAttr(i, Attribute::ByVal)) {
+    if (!PAL.hasParamAttr(ArgNo, Attribute::ByVal)) {
       bool aggregateIsPacked = false;
       if (StructType *STy = dyn_cast<StructType>(Ty))
         aggregateIsPacked = STy->isPacked();
@@ -3165,10 +3195,10 @@ SDValue NVPTXTargetLowering::LowerFormalArguments(
         report_fatal_error("Empty parameter types are not supported");
 
       Align ArgAlign = getFunctionArgumentAlignment(
-          F, Ty, i + AttributeList::FirstArgIndex, DL);
+          F, Ty, ArgNo + AttributeList::FirstArgIndex, DL);
       auto VectorInfo = VectorizePTXValueVTs(VTs, Offsets, ArgAlign);
 
-      SDValue Arg = getParamSymbol(DAG, i, PtrVT);
+      SDValue Arg = getParamSymbol(DAG, ParamIndex, PtrVT);
       int VecIdx = -1; // Index of the first element of the current vector.
       for (unsigned parti = 0, parte = VTs.size(); parti != parte; ++parti) {
         if (VectorInfo[parti] & PVF_FIRST) {
@@ -3245,8 +3275,7 @@ SDValue NVPTXTargetLowering::LowerFormalArguments(
         }
         ++InsIdx;
       }
-      if (VTs.size() > 0)
-        --InsIdx;
+      ++ParamIndex;
       continue;
     }
 
@@ -3260,11 +3289,13 @@ SDValue NVPTXTargetLowering::LowerFormalArguments(
     EVT ObjectVT = getValueType(DL, Ty);
     assert(ObjectVT == Ins[InsIdx].VT &&
            "Ins type did not match function type");
-    SDValue Arg = getParamSymbol(DAG, i, PtrVT);
+    SDValue Arg = getParamSymbol(DAG, ParamIndex, PtrVT);
     SDValue p = DAG.getNode(NVPTXISD::MoveParam, dl, ObjectVT, Arg);
     if (p.getNode())
       p.getNode()->setIROrder(i + 1);
     InVals.push_back(p);
+    ++InsIdx;
+    ++ParamIndex;
   }
 
   if (!OutChains.empty())
