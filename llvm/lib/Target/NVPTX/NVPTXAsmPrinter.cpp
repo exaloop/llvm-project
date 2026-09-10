@@ -29,6 +29,7 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
@@ -346,7 +347,7 @@ void NVPTXAsmPrinter::printReturnValStr(const Function *F, raw_ostream &O) {
 
   bool isABI = (STI.getSmVersion() >= 20);
 
-  if (Ty->getTypeID() == Type::VoidTyID)
+  if (Ty->isVoidTy() || Ty->isEmptyTy())
     return;
   O << " (";
 
@@ -1515,15 +1516,28 @@ void NVPTXAsmPrinter::emitFunctionParamList(const Function *F, raw_ostream &O) {
   bool isKernelFunc = isKernelFunction(*F);
   bool isABI = (STI.getSmVersion() >= 20);
 
-  if (F->arg_empty() && !F->isVarArg()) {
+  // Zero-sized arguments (e.g. empty structs) do not produce a parameter.
+  // Number the emitted parameters contiguously, skipping the zero-sized ones,
+  // so that the names match those used in LowerFormalArguments and the
+  // contiguous numbering used by callers (see LowerCall).
+  const auto NonEmptyArgs =
+      make_filter_range(F->args(), [](const Argument &Arg) {
+        return !Arg.getType()->isEmptyTy();
+      });
+
+  if (NonEmptyArgs.empty() && !F->isVarArg()) {
     O << "()";
     return;
   }
 
   O << "(\n";
 
-  for (I = F->arg_begin(), E = F->arg_end(); I != E; ++I, paramIndex++) {
+  for (I = F->arg_begin(), E = F->arg_end(); I != E; ++I) {
     Type *Ty = I->getType();
+    unsigned argIndex = I->getArgNo();
+
+    if (Ty->isEmptyTy())
+      continue;
 
     if (!first)
       O << ",\n";
@@ -1560,22 +1574,23 @@ void NVPTXAsmPrinter::emitFunctionParamList(const Function *F, raw_ostream &O) {
             O << "\t.param .samplerref ";
           O << TLI->getParamName(F, paramIndex);
         }
+        ++paramIndex;
         continue;
       }
     }
 
     auto getOptimalAlignForParam = [TLI, &DL, &PAL, F,
-                                    paramIndex](Type *Ty) -> Align {
+                                    argIndex](Type *Ty) -> Align {
       if (MaybeAlign StackAlign =
-              getAlign(*F, paramIndex + AttributeList::FirstArgIndex))
+              getAlign(*F, argIndex + AttributeList::FirstArgIndex))
         return StackAlign.value();
 
       Align TypeAlign = TLI->getFunctionParamOptimizedAlign(F, Ty, DL);
-      MaybeAlign ParamAlign = PAL.getParamAlignment(paramIndex);
+      MaybeAlign ParamAlign = PAL.getParamAlignment(argIndex);
       return std::max(TypeAlign, ParamAlign.valueOrOne());
     };
 
-    if (!PAL.hasParamAttr(paramIndex, Attribute::ByVal)) {
+    if (!PAL.hasParamAttr(argIndex, Attribute::ByVal)) {
       if (ShouldPassAsArray(Ty)) {
         // Just print .param .align <a> .b8 .param[size];
         // <a>  = optimal alignment for the element type; always multiple of
@@ -1586,7 +1601,7 @@ void NVPTXAsmPrinter::emitFunctionParamList(const Function *F, raw_ostream &O) {
         O << "\t.param .align " << OptimalAlign.value() << " .b8 ";
         O << TLI->getParamName(F, paramIndex);
         O << "[" << DL.getTypeAllocSize(Ty) << "]";
-
+        ++paramIndex;
         continue;
       }
       // Just a scalar
@@ -1621,6 +1636,7 @@ void NVPTXAsmPrinter::emitFunctionParamList(const Function *F, raw_ostream &O) {
 
           O << " .align " << I->getParamAlign().valueOrOne().value();
           O << " " << TLI->getParamName(F, paramIndex);
+          ++paramIndex;
           continue;
         }
 
@@ -1633,6 +1649,7 @@ void NVPTXAsmPrinter::emitFunctionParamList(const Function *F, raw_ostream &O) {
           O << getPTXFundamentalTypeStr(Ty);
         O << " ";
         O << TLI->getParamName(F, paramIndex);
+        ++paramIndex;
         continue;
       }
       // Non-kernel function, just print .param .b<size> for ABI
@@ -1651,11 +1668,12 @@ void NVPTXAsmPrinter::emitFunctionParamList(const Function *F, raw_ostream &O) {
       else
         O << "\t.reg .b" << sz << " ";
       O << TLI->getParamName(F, paramIndex);
+      ++paramIndex;
       continue;
     }
 
     // param has byVal attribute.
-    Type *ETy = PAL.getParamByValType(paramIndex);
+    Type *ETy = PAL.getParamByValType(argIndex);
     assert(ETy && "Param should have byval type");
 
     if (isABI || isKernelFunc) {
@@ -1667,12 +1685,13 @@ void NVPTXAsmPrinter::emitFunctionParamList(const Function *F, raw_ostream &O) {
           isKernelFunc
               ? getOptimalAlignForParam(ETy)
               : TLI->getFunctionByValParamAlign(
-                    F, ETy, PAL.getParamAlignment(paramIndex).valueOrOne(), DL);
+                    F, ETy, PAL.getParamAlignment(argIndex).valueOrOne(), DL);
 
       unsigned sz = DL.getTypeAllocSize(ETy);
       O << "\t.param .align " << OptimalAlign.value() << " .b8 ";
       O << TLI->getParamName(F, paramIndex);
       O << "[" << sz << "]";
+      ++paramIndex;
       continue;
     } else {
       // Split the ETy into constituent parts and
@@ -1702,7 +1721,6 @@ void NVPTXAsmPrinter::emitFunctionParamList(const Function *F, raw_ostream &O) {
         if (i < e - 1)
           O << ",\n";
       }
-      --paramIndex;
       continue;
     }
   }
