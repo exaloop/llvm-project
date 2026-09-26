@@ -16,6 +16,7 @@
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/InstIterator.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
 #include <optional>
@@ -25,6 +26,11 @@ using namespace llvm;
 #define DEBUG_TYPE "coro-elide"
 
 STATISTIC(NumOfCoroElided, "The # of coroutine get elided.");
+
+static cl::opt<unsigned> CoroElideMaxUses(
+    "coro-elide-max-uses-to-explore", cl::Hidden, cl::init(512),
+    cl::desc("Maximum uses examined for coroutine frame escape analysis "
+             "(zero disables frame elision)"));
 
 #ifndef NDEBUG
 static cl::opt<std::string> CoroElideInfoOutputFilename(
@@ -361,13 +367,13 @@ bool CoroIdElider::canCoroBeginEscape(
 bool CoroIdElider::lifetimeEligibleForElide() const {
   // If no CoroAllocs, we cannot suppress allocation, so elision is not
   // possible.
-  if (CoroAllocs.empty())
+  if (CoroAllocs.empty() || CoroElideMaxUses == 0)
     return false;
 
   // Ensure no coroutine handle escapes the parent function.
   for (CoroBeginInst *CB : CoroBegins) {
     CoroCaptureTracker CCT;
-    PointerMayBeCaptured(CB, &CCT, /*MaxUsesToExplore=*/32);
+    PointerMayBeCaptured(CB, &CCT, CoroElideMaxUses);
     if (CCT.Captured)
       return false;
   }
