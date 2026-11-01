@@ -72,5 +72,17 @@ cmake --install llvm/build --prefix="$INSTALL_ROOT/llvm-codon"
 
 touch "$INSTALL_ROOT/llvm-codon/llvm-codon-${COMMIT}-${ARCH}.version"
 
-tar cjvf "llvm-${ARCH}.tar.bz2" -C "$INSTALL_ROOT" llvm-codon/
-du -sh "llvm-${ARCH}.tar.bz2"
+case "$ARCH" in
+  windows-x86_64|windows-arm64)
+    ARCHIVE="$(pwd)/llvm-${ARCH}.zip"
+    (
+      cd "$INSTALL_ROOT"
+      cmake -E tar cf "$ARCHIVE" --format=zip llvm-codon/
+    )
+    ;;
+  *)
+    ARCHIVE="llvm-${ARCH}.tar.bz2"
+    tar cjvf "$ARCHIVE" -C "$INSTALL_ROOT" llvm-codon/
+    ;;
+esac
+du -sh "$ARCHIVE"

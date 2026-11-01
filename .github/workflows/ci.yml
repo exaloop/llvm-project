@@ -18,7 +18,7 @@ jobs:
       contents: write
     steps:
       - name: Create Release
-        if: contains(github.ref, 'tags/codon-')
+        if: contains(github.event.head_commit.message, '[release]')
         id: create_release
         uses: ncipollo/release-action@v1
 
@@ -41,9 +41,11 @@ jobs:
           - os: windows-latest
             arch: windows-x86_64
             msvc_arch: amd64
+            archive_extension: zip
           - os: windows-11-arm
             arch: windows-arm64
             msvc_arch: arm64
+            archive_extension: zip
     runs-on: ${{ matrix.os }}
     name: LLVM-Codon CI
     needs: create_release
@@ -89,18 +91,18 @@ jobs:
           bash .github/build-linux/entrypoint.sh "$GITHUB_WORKSPACE" ${{ matrix.arch }}
 
       - name: Upload Release Asset
-        if: contains(github.ref, 'tags/codon-')
+        if: contains(github.event.head_commit.message, '[release]')
         uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: ./llvm-${{ matrix.arch }}.tar.bz2
-          asset_name: llvm-${{ github.ref_name }}-${{ matrix.arch }}.tar.bz2
-          asset_content_type: application/bzip2
+          asset_path: ./llvm-${{ matrix.arch }}.${{ matrix.archive_extension || 'tar.bz2' }}
+          asset_name: llvm-${{ github.ref_name }}-${{ matrix.arch }}.${{ matrix.archive_extension || 'tar.bz2' }}
+          asset_content_type: ${{ matrix.archive_extension == 'zip' && 'application/zip' || 'application/bzip2' }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: llvm-${{ github.ref_name }}-${{ matrix.arch }}.tar.bz2
-          path: llvm-${{ matrix.arch }}.tar.bz2
+          name: llvm-${{ github.ref_name }}-${{ matrix.arch }}.${{ matrix.archive_extension || 'tar.bz2' }}
+          path: llvm-${{ matrix.arch }}.${{ matrix.archive_extension || 'tar.bz2' }}
