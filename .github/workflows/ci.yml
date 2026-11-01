@@ -38,6 +38,12 @@ jobs:
             arch: darwin-x86_64
           - os: macos-14
             arch: darwin-arm64
+          - os: windows-latest
+            arch: windows-x86_64
+            msvc_arch: amd64
+          - os: windows-11-arm
+            arch: windows-arm64
+            msvc_arch: arm64
     runs-on: ${{ matrix.os }}
     name: LLVM-Codon CI
     needs: create_release
@@ -45,6 +51,18 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Set up Windows toolchain
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "$env:ProgramFiles\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Build (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
@@ -60,6 +78,15 @@ jobs:
           sudo mkdir -p /opt/llvm-codon
           sudo chown -R $(whoami) /opt/llvm-codon
           bash .github/build-linux/entrypoint.sh ${{ github.workspace }} ${{ matrix.arch }}
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          clang-cl --version
+          lld-link --version
+          ninja --version
+          bash .github/build-linux/entrypoint.sh "$GITHUB_WORKSPACE" ${{ matrix.arch }}
 
       - name: Upload Release Asset
         if: contains(github.ref, 'tags/codon-')
