@@ -7,21 +7,6 @@ on:
       - 'codon-*'
 
 jobs:
-  create_release:
-    name: Create GitHub Release
-    runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-    permissions:
-      contents: write
-    steps:
-      - name: Create Release
-        if: contains(github.event.head_commit.message, '[release]')
-        id: create_release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: codon
-
   build:
     strategy:
       matrix:
@@ -48,9 +33,8 @@ jobs:
             archive_extension: zip
     runs-on: ${{ matrix.os }}
     name: LLVM-Codon CI
-    needs: create_release
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -90,19 +74,75 @@ jobs:
           ninja --version
           bash .github/build-linux/entrypoint.sh "$GITHUB_WORKSPACE" ${{ matrix.arch }}
 
-      - name: Upload Release Asset
-        if: contains(github.event.head_commit.message, '[release]')
-        uses: actions/upload-release-asset@v1.0.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: ./llvm-${{ matrix.arch }}.${{ matrix.archive_extension || 'tar.bz2' }}
-          asset_name: llvm-codon-${{ matrix.arch }}.${{ matrix.archive_extension || 'tar.bz2' }}
-          asset_content_type: ${{ matrix.archive_extension == 'zip' && 'application/zip' || 'application/bzip2' }}
-
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: llvm-codon-${{ matrix.arch }}.${{ matrix.archive_extension || 'tar.bz2' }}
           path: llvm-${{ matrix.arch }}.${{ matrix.archive_extension || 'tar.bz2' }}
+          if-no-files-found: error
+
+  create_release:
+    name: Create GitHub Release
+    needs: build
+    if: contains(github.event.head_commit.message, '[release]')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: llvm-codon-release
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: llvm-codon-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Prepare release asset names
+        run: |
+          for artifact in release-assets/llvm-*; do
+            name="${artifact##*/}"
+            mv "$artifact" "release-assets/llvm-codon-${name#llvm-}"
+          done
+
+      - name: Update release tag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const ref = { ...context.repo, ref: 'tags/codon' };
+            try {
+              await github.rest.git.getRef(ref);
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.git.createRef({
+                ...context.repo,
+                ref: 'refs/tags/codon',
+                sha: context.sha,
+              });
+              return;
+            }
+            await github.rest.git.updateRef({
+              ...ref,
+              sha: context.sha,
+              force: true,
+            });
+
+      - name: Prepare release metadata
+        id: release_metadata
+        run: echo "date=$(TZ=America/Vancouver date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Create or replace release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: codon
+          name: codon
+          commit: ${{ github.sha }}
+          body: |
+            Date: ${{ steps.release_metadata.outputs.date }}
+            Commit: [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
+          artifacts: release-assets/*
+          artifactErrorsFailBuild: true
+          allowUpdates: true
+          removeArtifacts: true
+          replacesArtifacts: true
