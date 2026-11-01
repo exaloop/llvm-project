@@ -36,7 +36,7 @@ jobs:
             arch: manylinux2014-aarch64
           - os: macos-15-intel
             arch: darwin-x86_64
-          - os: macos-14
+          - os: macos-15
             arch: darwin-arm64
           - os: windows-latest
             arch: windows-x86_64
