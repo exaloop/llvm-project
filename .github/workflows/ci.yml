@@ -98,11 +98,11 @@ jobs:
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }}
           asset_path: ./llvm-${{ matrix.arch }}.${{ matrix.archive_extension || 'tar.bz2' }}
-          asset_name: llvm-${{ github.ref_name }}-${{ matrix.arch }}.${{ matrix.archive_extension || 'tar.bz2' }}
+          asset_name: llvm-codon-${{ matrix.arch }}.${{ matrix.archive_extension || 'tar.bz2' }}
           asset_content_type: ${{ matrix.archive_extension == 'zip' && 'application/zip' || 'application/bzip2' }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: llvm-${{ github.ref_name }}-${{ matrix.arch }}.${{ matrix.archive_extension || 'tar.bz2' }}
+          name: llvm-codon-${{ matrix.arch }}.${{ matrix.archive_extension || 'tar.bz2' }}
           path: llvm-${{ matrix.arch }}.${{ matrix.archive_extension || 'tar.bz2' }}
