@@ -1,4 +1,5 @@
 FROM quay.io/pypa/manylinux2014_x86_64
+RUN echo -ne "[safe]\ndirectory = *" > /root/.gitconfig
 COPY entrypoint.sh /entrypoint.sh
 RUN yum -y install ninja-build
 ENTRYPOINT ["/entrypoint.sh"]
