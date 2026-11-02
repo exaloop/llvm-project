@@ -2118,13 +2118,10 @@ int __kmp_is_address_mapped(void *addr) {
 
 #if KMP_OS_LINUX || KMP_OS_HURD
 
-  /* On GNUish OSes, read the /proc/<pid>/maps pseudo-file to get all the
+  /* On GNUish OSes, read the /proc/self/maps pseudo-file to get all the
      address ranges mapped into the address space. */
 
-  char *name = __kmp_str_format("/proc/%d/maps", getpid());
-  FILE *file = NULL;
-
-  file = fopen(name, "r");
+  FILE *file = fopen("/proc/self/maps", "r");
   KMP_ASSERT(file != NULL);
 
   for (;;) {
@@ -2153,7 +2150,6 @@ int __kmp_is_address_mapped(void *addr) {
 
   // Free resources.
   fclose(file);
-  KMP_INTERNAL_FREE(name);
 #elif KMP_OS_FREEBSD
   char *buf;
   size_t lstsz;
