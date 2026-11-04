@@ -56,6 +56,14 @@ COMPILER_RT_ABI CMP_RESULT __getf2(fp_t a, fp_t b) { return __geXf2__(a, b); }
 
 COMPILER_RT_ALIAS(__getf2, __gttf2)
 
+#ifdef _WIN32
+// COFF does not implement COMPILER_RT_ALIAS.
+COMPILER_RT_ABI CMP_RESULT __eqtf2(fp_t a, fp_t b) { return __letf2(a, b); }
+COMPILER_RT_ABI CMP_RESULT __lttf2(fp_t a, fp_t b) { return __letf2(a, b); }
+COMPILER_RT_ABI CMP_RESULT __netf2(fp_t a, fp_t b) { return __letf2(a, b); }
+COMPILER_RT_ABI CMP_RESULT __gttf2(fp_t a, fp_t b) { return __getf2(a, b); }
+#endif
+
 COMPILER_RT_ABI CMP_RESULT __unordtf2(fp_t a, fp_t b) {
   return __unordXf2__(a, b);
 }

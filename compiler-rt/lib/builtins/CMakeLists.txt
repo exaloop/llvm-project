@@ -398,6 +398,20 @@ else () # MSVC
   set(i386_SOURCES ${GENERIC_SOURCES} ${x86_ARCH_SOURCES})
 endif () # if (NOT MSVC)
 
+# Clang supports software IEEE quad on Windows, but the MSVC long double
+# default is binary64. Only the quad sources need the binary128 type.
+if(MSVC AND CMAKE_C_COMPILER_ID MATCHES "Clang" AND
+   COMPILER_RT_DEFAULT_TARGET_ARCH STREQUAL "x86_64")
+  set(WINDOWS_TF_SOURCES
+    addtf3.c subtf3.c multf3.c divtf3.c comparetf2.c
+    extenddftf2.c extendhftf2.c extendsftf2.c
+    trunctfdf2.c trunctfhf2.c trunctfsf2.c)
+  list(APPEND x86_64_SOURCES ${WINDOWS_TF_SOURCES} fp_mode.c)
+  set_source_files_properties(${WINDOWS_TF_SOURCES} trunctfbf2.c
+    PROPERTIES COMPILE_OPTIONS "/clang:-mlong-double-128")
+endif()
+
+
 
 # builtin support for Targets that have Arm state or have Thumb2
 set(arm_or_thumb2_base_SOURCES

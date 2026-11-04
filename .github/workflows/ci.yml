@@ -27,10 +27,11 @@ jobs:
             arch: windows-x86_64
             msvc_arch: amd64
             archive_extension: zip
-          - os: windows-11-arm
-            arch: windows-arm64
-            msvc_arch: arm64
-            archive_extension: zip
+          # Disable: does not work OBO with Codon, further investigation needed
+          # - os: windows-11-arm
+          #   arch: windows-arm64
+          #   msvc_arch: arm64
+          #   archive_extension: zip
     runs-on: ${{ matrix.os }}
     name: LLVM-Codon CI
     permissions:
